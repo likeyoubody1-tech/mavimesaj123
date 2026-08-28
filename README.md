@@ -64,3 +64,4 @@ mesaj site/
 - DB sıfırlamak için `backend/data/db.json` içini `{"users":[],"friendships":{},"messages":[]}` yap.
 - WebRTC için HTTPS veya localhost gerekir (tarayıcı izni).
 - Varsayılan JWT secret `.env` ile değiştirilebilir: `JWT_SECRET=... PORT=3000`
+"# 123123321" 
