@@ -80,7 +80,18 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   outline: none;
   transition: border-color .15s, background .15s;
   width: 100%;
+  min-width: 0;
 }
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4.5L6 8.5L10 4.5' stroke='%2394a9d4' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+select option { background: #0e1e42; color: var(--text); }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); background: rgba(5, 11, 26, 0.9); }
 
 label.check {
@@ -154,10 +165,11 @@ header.topbar {
 
 main.grid {
   display: grid;
-  grid-template-columns: 320px 1fr 320px;
+  grid-template-columns: 340px minmax(0, 1fr) 350px;
   gap: 14px;
   padding: 14px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .col {
@@ -165,9 +177,20 @@ main.grid {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  overflow: hidden;
+  min-width: 0;
 }
-.col.center { gap: 14px; }
+
+/* Sol sütun doğal yükseklikte kartlar tutar; taşarsa sütunun kendisi kayar */
+.col.left {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.col.left::-webkit-scrollbar { width: 8px; }
+.col.left::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.col.center, .col.right { overflow: hidden; }
 
 .card {
   background: linear-gradient(180deg, rgba(14, 30, 66, 0.85), rgba(10, 22, 52, 0.85));
@@ -176,7 +199,9 @@ main.grid {
   padding: 14px 14px 12px;
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   min-height: 0;
+  overflow: hidden;
 }
 .card h2 {
   font-size: 13px;
@@ -192,15 +217,18 @@ main.grid {
 }
 .card h2 .sub { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 500; font-size: 11px; }
 
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; min-width: 0; }
 .field label { font-size: 12px; color: var(--muted); }
 .field.row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+.field.row-even { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.field.row2 > div, .field.row-even > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.checks { gap: 7px; }
 
 .btn-row { display: flex; gap: 8px; margin-top: 4px; }
 .btn-row > * { flex: 1; }
 
 /* Chat */
-.chat-card { flex: 1; min-height: 0; }
+.chat-card { flex: 1 1 auto; min-height: 0; }
 .chat-body {
   flex: 1;
   overflow-y: auto;
@@ -237,8 +265,21 @@ main.grid {
 }
 
 /* Tasks */
-.tasks-card { flex: 1; min-height: 0; }
-.task-list { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.col.right .tasks-card { flex: 1 1 58%; min-height: 240px; }
+.col.right .players-card { flex: 1 1 42%; min-height: 150px; }
+.task-list {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.task-list::-webkit-scrollbar { width: 8px; }
+.task-list::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
 .task {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -258,12 +299,15 @@ main.grid {
 
 .task-add {
   display: grid;
-  grid-template-columns: 1fr 70px;
+  grid-template-columns: 1fr 92px;
   gap: 8px;
   margin-bottom: 10px;
+  flex: 0 0 auto;
 }
+.ta-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ta-field label { font-size: 11px; color: var(--muted); }
+.ta-field.wide { grid-column: 1 / -1; }
 .task-add textarea {
-  grid-column: 1 / -1;
   resize: vertical;
   min-height: 46px;
   font-family: var(--mono);
@@ -274,7 +318,8 @@ main.grid {
   color: var(--muted);
   font-size: 11px;
   margin: -4px 0 8px;
-  line-height: 1.4;
+  line-height: 1.5;
+  flex: 0 0 auto;
 }
 .hint code {
   background: rgba(47, 125, 255, 0.15);
@@ -288,13 +333,18 @@ main.grid {
 /* Players */
 .players-list {
   overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-family: var(--mono);
   font-size: 12.5px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
 }
+.players-list::-webkit-scrollbar { width: 8px; }
+.players-list::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
 .player { padding: 5px 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
 .player:hover { background: rgba(47, 125, 255, 0.1); }
 .player .idx { color: var(--muted); font-size: 11px; width: 24px; }
@@ -336,12 +386,40 @@ main.grid {
 .toast.ok { border-color: var(--good); color: var(--good); }
 @keyframes slide { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-@media (max-width: 1100px) {
-  main.grid { grid-template-columns: 300px 1fr; }
-  .col.right { display: none; }
+/* Orta genislik: gorevler + oyuncular sohbetin altina gecer */
+@media (max-width: 1320px) {
+  main.grid {
+    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 300px);
+  }
+  .col.left { grid-column: 1; grid-row: 1 / span 2; }
+  .col.center { grid-column: 2; grid-row: 1; }
+  .col.right { grid-column: 2; grid-row: 2; flex-direction: row; }
+  .col.right .tasks-card,
+  .col.right .players-card { flex: 1 1 50%; min-height: 0; }
 }
-@media (max-width: 760px) {
-  main.grid { grid-template-columns: 1fr; overflow: auto; }
-  .col { max-height: none; }
-  .col.right { display: flex; }
+
+/* Dar ekran: tek sutun, sayfa kayar */
+@media (max-width: 860px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100vh; }
+  main.grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    overflow: visible;
+  }
+  .col,
+  .col.left,
+  .col.center,
+  .col.right {
+    grid-column: 1;
+    grid-row: auto;
+    flex-direction: column;
+    overflow: visible;
+    padding-right: 0;
+  }
+  .card { flex: 0 0 auto; }
+  .chat-card { min-height: 380px; }
+  .col.right .tasks-card { min-height: 320px; }
+  .col.right .players-card { min-height: 220px; }
 }

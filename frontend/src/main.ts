@@ -173,7 +173,7 @@ function renderConnectCard(): HTMLElement {
       el('div', {}, [el('label', {}, ['Kullanıcı adı']), input('username', { placeholder: 'MaviBot' })]),
       el('div', {}, [el('label', {}, ['Port']), input('port', { type: 'number', placeholder: '25565' })]),
     ]),
-    el('div', { class: 'field row2' }, [
+    el('div', { class: 'field row-even' }, [
       el('div', {}, [el('label', {}, ['Sürüm (boş = auto)']), input('version', { placeholder: '1.20.1' })]),
       el('div', {}, [
         el('label', {}, ['Mod']),
@@ -189,7 +189,7 @@ function renderConnectCard(): HTMLElement {
       el('label', {}, ['Şifre (register/login için)']),
       input('authPassword', { type: 'password', placeholder: 'authme / login şifresi' }),
     ]),
-    el('div', { class: 'field' }, [
+    el('div', { class: 'field checks' }, [
       check('autoAuth', 'Otomatik /register ve /login'),
       check('autoRespawn', 'Ölünce otomatik respawn'),
       check('autoReconnect', 'Kopunca otomatik yeniden bağlan'),
@@ -208,7 +208,7 @@ function renderStatsCard(): HTMLElement {
   const pos = s.position ? `${s.position.x}, ${s.position.y}, ${s.position.z}` : '—';
   const dim = (s.dimension || '').replace('minecraft:', '') || '—';
   const uptime = s.joinedAt && s.connected ? fmtUptime(Date.now() - s.joinedAt) : '—';
-  return el('section', { class: 'card' }, [
+  return el('section', { class: 'card', id: 'stats-card' }, [
     el('h2', {}, ['Durum']),
     el('div', { class: 'stats' }, [
       stat('Can', s.health !== undefined ? `${Math.round(s.health * 10) / 10} / 20` : '—'),
@@ -339,8 +339,9 @@ function renderTasksCard(): HTMLElement {
   return el('section', { class: 'card tasks-card' }, [
     el('h2', {}, ['Zamanlı Görevler', el('span', { class: 'sub' }, [`${state.tasks.length}`])]),
     el('div', { class: 'task-add' }, [
-      nameInput, intervalInput,
-      templateArea,
+      el('div', { class: 'ta-field' }, [el('label', {}, ['Görev adı']), nameInput]),
+      el('div', { class: 'ta-field' }, [el('label', {}, ['Saniye']), intervalInput]),
+      el('div', { class: 'ta-field wide' }, [el('label', {}, ['Komut / mesaj']), templateArea]),
       addBtn,
     ]),
     el('div', { class: 'hint', html: 'Değişkenler: <code>[everyone]</code> tüm oyunculara tek tek · <code>[random]</code> rastgele oyuncu · <code>[count]</code> oyuncu sayısı. Her görev her X saniyede bir çalışır.' }),
@@ -406,7 +407,7 @@ function renderPlayersCard(): HTMLElement {
         el('button', { class: 'small cp', onclick: () => { navigator.clipboard?.writeText(p); toast(`"${p}" kopyalandı`, 'ok'); } }, ['kopya']),
       ]))
     : [el('div', { style: { color: 'var(--muted)', padding: '12px 4px', fontSize: '12.5px', textAlign: 'center' } }, ['Oyuncu listesi yükleniyor...'])];
-  return el('section', { class: 'card tasks-card', style: { minHeight: '200px' } }, [
+  return el('section', { class: 'card players-card' }, [
     el('h2', {}, ['Çevrimiçi Oyuncular', el('span', { class: 'sub' }, [`${state.players.length}`])]),
     el('div', { class: 'players-list' }, list),
   ]);
@@ -544,7 +545,7 @@ setInterval(() => {
     const topbar = document.querySelector('header.topbar');
     const parent = topbar?.parentElement;
     if (topbar && parent) parent.replaceChild(renderTopbar(), topbar);
-    const statsCard = document.querySelectorAll('.col.left .card')[1];
+    const statsCard = document.getElementById('stats-card');
     if (statsCard) statsCard.replaceWith(renderStatsCard());
   }
 }, 1000);
