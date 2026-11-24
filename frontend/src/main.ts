@@ -13,6 +13,7 @@ interface BotStatus {
   dimension?: string;
   version?: string;
   lastError?: string;
+  diagnostic?: string;
   joinedAt?: number;
 }
 
@@ -135,9 +136,20 @@ function renderTopbar(): HTMLElement {
 function renderMain(): HTMLElement {
   return el('main', { class: 'grid' }, [
     el('div', { class: 'col left' }, [renderConnectCard(), renderStatsCard(), renderActionsCard()]),
-    el('div', { class: 'col center' }, [renderChatCard()]),
+    el('div', { class: 'col center' }, [renderBanner(), renderChatCard()].filter(Boolean) as Node[]),
     el('div', { class: 'col right' }, [renderTasksCard(), renderPlayersCard()]),
   ]);
+}
+
+function renderBanner(): HTMLElement | null {
+  const s = state.status;
+  if (s.connected || s.connecting) return null;
+  if (!s.lastError && !s.diagnostic) return null;
+  return el('div', { class: 'banner err' }, [
+    el('div', { class: 'banner-title' }, ['⚠ Bağlanılamadı']),
+    s.diagnostic ? el('div', { class: 'banner-text' }, [s.diagnostic]) : null,
+    s.lastError ? el('div', { class: 'banner-sub' }, [`Teknik: ${s.lastError}`]) : null,
+  ].filter(Boolean) as Node[]);
 }
 
 function renderConnectCard(): HTMLElement {

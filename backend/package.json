@@ -10,7 +10,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "mineflayer": "^4.23.0",
+    "mineflayer": "^4.39.0",
     "ws": "^8.17.1"
   },
   "devDependencies": {

@@ -77,8 +77,26 @@ mavimesaj123/
       style.css     # Mavi tema
 ```
 
+### Sorun Giderme (sunucuya giremiyorsan)
+
+Panel bağlanamazsa sohbetin üstünde **kırmızı bir uyarı kutusu** çıkar ve sebebini Türkçe yazar. En sık sebepler:
+
+| Belirti | Sebep / Çözüm |
+|---|---|
+| `ECONNREFUSED` | IP veya port yanlış, ya da sunucu kapalı. Çoğu sunucu portu **25565**. |
+| `ENOTFOUND` | Sunucu adresi hatalı yazılmış. |
+| `ETIMEDOUT` / 30sn zaman aşımı | Sunucuya ulaşılamıyor ya da seni engelliyor. |
+| `ECONNRESET` / `EPIPE` / hemen kopuyor | **Anti-bot koruması** ya da **sürüm uyumsuzluğu**. Sürüm alanına sunucunun **tam sürümünü** yaz (örn. `1.20.4`). |
+| "premium account" uyarısı | Sunucu premium hesap istiyor. Mod'u **Premium** yapıp Microsoft hesabıyla gir, ya da cracked sunucu kullan. |
+| "whitelist" uyarısı | Bot adı beyaz listeye eklenmeli. |
+
+İpuçları:
+- **Sürüm** alanını önce **boş** bırak (otomatik algılar). Olmazsa sunucunun tam sürümünü yaz.
+- **Cracked** modda sunucu `online-mode=false` olmalı; değilse "premium" uyarısı alırsın.
+- Node.js **20 veya 22 LTS** en stabil çalışır. Çok yeni Node sürümlerinde sorun olursa LTS'e geç.
+
 ### Notlar
-- Mineflayer varsayılan olarak 1.8 - 1.21 arası sürümleri destekler. "Sürüm" boş bırakılırsa otomatik algılanır.
-- **Cracked** modda sunucu `online-mode=false` olmalı. Aksi halde atılırsın.
-- `[everyone]` görevleri her oyuncu için varsayılan 400ms gecikmeyle gönderir — sunucu spam filtresine takılma.
+- Mineflayer 1.8 - 1.21+ arası sürümleri destekler. "Sürüm" boş = otomatik algılama.
+- `[everyone]` görevleri her oyuncu için varsayılan 400ms gecikmeyle gönderir — spam filtresine takılma.
 - Mesaj limiti 256 karakter; uzun mesajlar otomatik parçalanır.
+- Bağlantı koparsa (ve "otomatik yeniden bağlan" açıksa) 10 saniyede bir tekrar denenir.
