@@ -1,6 +1,3 @@
 node_modules/
-dist/
-backend/dist/
-frontend/dist/
 .env
 *.log

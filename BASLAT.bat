@@ -1,30 +1,46 @@
 @echo off
+setlocal enableextensions
 title Mavi Bot - Yonetim Paneli
 echo.
 echo ==== Mavi Bot ====
 echo.
+
+rem --- Windows kabuk ortamini garanti altina al (cmd.exe ENOENT hatasini onler) ---
+if not defined ComSpec set "ComSpec=%SystemRoot%\System32\cmd.exe"
+set "PATH=%PATH%;%SystemRoot%\System32;%SystemRoot%"
+
 cd /d "%~dp0"
 
-if not exist "node_modules" (
-  echo [1/3] Paketler kuruluyor... (ilk calistirma - biraz surebilir)
-  call npm install
-  if errorlevel 1 (
+rem --- Calisma-zamani paketleri kurulu mu? (sadece mineflayer vb, build araci YOK) ---
+if not exist "node_modules\mineflayer\package.json" (
+  echo [1/2] Gerekli paketler kuruluyor... (ilk calistirma, 1-2 dk surebilir)
+  echo.
+  call npm install --omit=dev --no-audit --no-fund
+  echo.
+  if not exist "node_modules\mineflayer\package.json" (
+    echo ============================================================
+    echo  KURULUM TAMAMLANAMADI
+    echo ------------------------------------------------------------
+    echo  Lutfen sunlari sirayla dene:
+    echo   1^) Acik Mavi Bot / siyah pencereleri KAPAT.
+    echo   2^) Bu klasordeki "node_modules" klasorunu SIL.
+    echo   3^) Klasoru BOSLUKSUZ bir yola tasi, ornek: C:\MaviBot
+    echo      ^(simdiki yolda bosluk/parantez var: "%~dp0"^)
+    echo   4^) BASLAT.bat'a tekrar cift tikla.
+    echo  Node.js 20 veya 22 LTS kurulu olmali: https://nodejs.org
+    echo ============================================================
     echo.
-    echo HATA: npm install basarisiz. Node.js 20+ kurulu mu?
     pause
     exit /b 1
   )
 )
 
-echo [2/3] Build...
-call npm run build
-if errorlevel 1 (
-  echo HATA: build basarisiz.
-  pause
-  exit /b 1
-)
-
-echo [3/3] Baslatiliyor -> http://localhost:3000
+echo [2/2] Baslatiliyor -^> http://localhost:3000
+echo  ^(Kapatmak icin bu pencereyi kapat^)
+echo.
 start "" http://localhost:3000
-call npm start
+node backend\dist\server.js
+
+echo.
+echo Sunucu durdu. Bir hata olduysa yukaridaki mesaja bak.
 pause

@@ -23,26 +23,28 @@ Tarayıcıdan yönettiğin bir Minecraft botu. **Mineflayer** + **Express** +
 
 ### Çalıştırma
 
-**1) Kurulum (bir kez)**
+**Windows (en kolay):** `BASLAT.bat` dosyasına çift tıkla. İlk açılışta sadece
+çalışma-zamanı paketlerini kurar (`npm install --omit=dev`) ve açar — **build
+gerekmez**, çünkü derlenmiş `dist` klasörleri repoda hazır gelir. Sorun çıkaran
+`vite/typescript/esbuild` bu yolda hiç kurulmaz.
+
+> İpucu: Klasörü **boşluksuz** bir yola çıkar (örn. `C:\MaviBot`), ve kurulum
+> sırasında botun açık pencerelerini kapat (dosya kilidi olmasın).
+
+**Elle (her platform):**
 ```bash
-npm install
+npm install --omit=dev   # sadece mineflayer, express, ws, cors
+npm start                # -> http://localhost:3000
 ```
 
-**2) Üretim (tek port, hızlı)**
+**Kaynağı değiştirip yeniden derlemek istersen (geliştirici):**
 ```bash
-npm run build
+npm install              # dev araçları dahil
+npm run build            # dist'i yeniden üretir
 npm start
-# -> http://localhost:3000
+# veya hot reload:
+npm run dev              # backend 3000, frontend 5173
 ```
-
-**3) Geliştirme (hot reload)**
-```bash
-npm run dev
-# backend  -> http://localhost:3000
-# frontend -> http://localhost:5173
-```
-
-**Windows:** `BASLAT.bat` dosyasına çift tıkla — otomatik build + açılış.
 
 ### Hızlı Başlangıç
 
