@@ -292,6 +292,59 @@ export class MCBot extends EventEmitter {
     }, delay);
   }
 
+  /** GUI/envanter captcha'sı: açılan pencerede "onay/tıkla" ögesini bulup tıklar */
+  private handleWindowCaptcha(window: any) {
+    const bot = this.bot;
+    if (!bot || !window) return;
+    let slots: any[] = [];
+    try { slots = (window.slots || []).slice(); } catch { return; }
+    // Sadece sandık/menü içeriği (oyuncu envanterini hariç tut): ilk inventoryStart'a kadar
+    const invStart = typeof window.inventoryStart === 'number' ? window.inventoryStart : slots.length;
+    const menu = slots.slice(0, invStart).map((it, i) => ({ it, slot: i })).filter(x => x.it);
+
+    if (!menu.length) return;
+
+    const GOOD = /(onay|onayla|do[ğg]rula|do[ğg]rulan|kabul|t[ıi]kla|click|verify|verif|confirm|continue|devam|ba[şs]la|start|evet|yes|gir(i[şs])?|join|accept|green|lime|emerald|slime|✔|✓|✅|☑)/i;
+    const BAD = /(gray|grey|black|white|light_blue|cyan|barrier|background|filler|cam|pane)/i;
+
+    const nameOf = (it: any): string => {
+      const parts: string[] = [];
+      if (it.name) parts.push(it.name);
+      if (it.displayName) parts.push(it.displayName);
+      try { const c = componentToText(it.customName); if (c) parts.push(c); } catch {}
+      return parts.join(' ').toLowerCase();
+    };
+
+    // Puanla: onay kelimesi +3, iyi materyal +2, cam/filler -3
+    let best: { slot: number; score: number } | null = null;
+    for (const { it, slot } of menu) {
+      const nm = nameOf(it);
+      let score = 0;
+      if (GOOD.test(nm)) score += 3;
+      if (/(emerald|lime_wool|green_wool|lime_concrete|green_concrete|lime_stained|green_stained|slime_ball)/i.test(nm)) score += 2;
+      if (BAD.test(nm)) score -= 3;
+      if (best === null || score > best.score) best = { slot, score };
+    }
+
+    // Sadece belirgin bir onay ögesi, ya da tek bir dolu (filler olmayan) öge varsa tıkla.
+    // Her şey filler/camsa dokunma (yanlış tıklama anti-bot'u bozabilir).
+    const nonFiller = menu.filter(x => !BAD.test(nameOf(x.it)));
+    let target = -1;
+    if (best && best.score > 0) target = best.slot;
+    else if (nonFiller.length === 1) target = nonFiller[0].slot;
+
+    if (target < 0) {
+      this.pushChat({ kind: 'info', text: 'GUI captcha açıldı ama tıklanacak belirgin onay ögesi bulunamadı. Mesajı bana ilet.' });
+      return;
+    }
+    try {
+      bot.clickWindow(target, 0, 0);
+      this.pushChat({ kind: 'info', text: `GUI captcha: ${target}. slota tıklandı (onay ögesi).` });
+    } catch (e: any) {
+      this.pushChat({ kind: 'error', text: `GUI captcha tıklama hatası: ${e?.message || e}` });
+    }
+  }
+
   /** Anti-bot hareket kontrollerini geçmek için spawn sonrası insansı davranış */
   private humanizeJoin() {
     const bot = this.bot;
@@ -495,6 +548,12 @@ export class MCBot extends EventEmitter {
           this.pushChat({ kind: 'info', text: `Tabela captcha'sına "${code || 'verify'}" yazıldı.` });
         } catch {}
       }, 600);
+    });
+
+    // GUI / envanter captcha'sı: sunucu bir sandık/menü açıp "tıkla" isterse onay ögesine tıkla
+    bot.on('windowOpen', (window: any) => {
+      if (!this.cfg?.antiBot) return;
+      setTimeout(() => this.handleWindowCaptcha(window), 700);
     });
 
     bot.on('kicked', (reason: any) => {
