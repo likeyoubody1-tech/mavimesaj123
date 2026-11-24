@@ -284,8 +284,9 @@ export class MCBot extends EventEmitter {
       this.pushChat({ kind: 'error', text: 'Anti-bot 60 denemede geçilemedi. Sürümü kontrol et ya da sunucu farklı bir doğrulama kullanıyor olabilir.' });
       return;
     }
-    const delay = earlyAntiBot ? 4000 : 10_000;
-    this.pushChat({ kind: 'info', text: `${Math.round(delay / 1000)} saniye içinde yeniden bağlanılacak${earlyAntiBot ? ` (anti-bot geçiş denemesi #${this._reconnectAttempts})` : ''}...` });
+    // Anti-bot "ilk bağlantıyı kes" deseni: ilk denemeler hızlı, sonra biraz yavaşlar
+    const delay = earlyAntiBot ? (this._reconnectAttempts <= 3 ? 1500 : this._reconnectAttempts <= 10 ? 2500 : 4000) : 10_000;
+    this.pushChat({ kind: 'info', text: `${(delay / 1000).toFixed(1)} saniye içinde yeniden bağlanılacak${earlyAntiBot ? ` (anti-bot geçiş denemesi #${this._reconnectAttempts})` : ''}...` });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.cfg && !this.manualDisconnect) this.connect(this.cfg, true);

@@ -145,12 +145,13 @@ function renderMain(): HTMLElement {
 
 function renderBanner(): HTMLElement | null {
   const s = state.status;
-  if (s.connected || s.connecting) return null;
+  if (s.connected) return null;
   if (!s.lastError && !s.diagnostic) return null;
+  const title = s.connecting ? '⏳ Yeniden deneniyor — son hata' : '⚠ Bağlanılamadı';
   return el('div', { class: 'banner err' }, [
-    el('div', { class: 'banner-title' }, ['⚠ Bağlanılamadı']),
+    el('div', { class: 'banner-title' }, [title]),
     s.diagnostic ? el('div', { class: 'banner-text' }, [s.diagnostic]) : null,
-    s.lastError ? el('div', { class: 'banner-sub' }, [`Teknik: ${s.lastError}`]) : null,
+    s.lastError ? el('div', { class: 'banner-sub' }, [`Sunucunun verdiği sebep: ${s.lastError}`]) : null,
   ].filter(Boolean) as Node[]);
 }
 
