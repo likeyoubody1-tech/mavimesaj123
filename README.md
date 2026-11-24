@@ -13,8 +13,9 @@ Tarayıcıdan yönettiğin bir Minecraft botu. **Mineflayer** + **Express** +
   - `[random]` → rastgele oyuncu
   - `[count]` → çevrimiçi oyuncu sayısı
   - Her görev ayrı ayrı aç/kapat, düzenle, sil, "şimdi çalıştır"
-- 🛡️ **Otomatik doğrulama (AuthMe vb.)** — `/register şifre şifre` ve `/login şifre` otomatik
-- 🧮 **Basit captcha çözme** — matematik (`2 + 5 = ?`) ve kod captcha'ları
+- 🛡️ **Anti-bot geçişi** — ilk bağlantıyı kesen korumalar için hızlı yeniden bağlanma, insansı hareket, resource pack otomatik kabul, tabela (sign) captcha'sı doldurma
+- 🔑 **Otomatik doğrulama (AuthMe vb.)** — `/register şifre şifre` ve `/login şifre` otomatik
+- 🧮 **Çok biçimli captcha çözme** — matematik, "type/yaz KOD", "kod: X" kalıpları; sohbet + **title + boss bar + scoreboard**'dan okur
 - ♻️ **Otomatik respawn**, **otomatik yeniden bağlanma**, **Anti-AFK**
 - 👥 **Çevrimiçi oyuncular** paneli (tab sırası ile, tıkla-kopyala)
 - 📊 **Durum paneli** — can, açlık, konum, dünya, sürüm, bağlı kalma süresi
@@ -94,6 +95,17 @@ Panel bağlanamazsa sohbetin üstünde **kırmızı bir uyarı kutusu** çıkar 
 - **Sürüm** alanını önce **boş** bırak (otomatik algılar). Olmazsa sunucunun tam sürümünü yaz.
 - **Cracked** modda sunucu `online-mode=false` olmalı; değilse "premium" uyarısı alırsın.
 - Node.js **20 veya 22 LTS** en stabil çalışır. Çok yeni Node sürümlerinde sorun olursa LTS'e geç.
+
+### Anti-bot korumasını geçememe
+
+**"Anti-bot geçişi"** seçeneği açıkken bot şunları otomatik yapar:
+- Sunucu ilk bağlantıyı keserse (çoğu Türk sunucu böyle yapar) **4 saniyede bir, 60 denemeye kadar** hızlıca tekrar bağlanır — genelde 1-3 denemede geçer.
+- Spawn olunca insansı hareket eder (bakınma, adım, zıplama) → hareket kontrolünü geçer.
+- Captcha'yı **sohbet, title, boss bar ve scoreboard**'dan okuyup cevaplar (matematik / kod).
+- Resource pack isteğini otomatik kabul eder.
+- Tabela (sign) captcha'sı açılırsa son gördüğü kodu tabelaya yazar.
+
+Yine de geçemiyorsan: sohbet kutusuna düşen doğrulama mesajının **tam metnini** bana ilet; captcha o sunucuya özel bir biçimde olabilir, ona göre kalıp eklerim.
 
 ### Notlar
 - Mineflayer 1.8 - 1.21+ arası sürümleri destekler. "Sürüm" boş = otomatik algılama.

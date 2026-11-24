@@ -12,6 +12,7 @@ export interface BotConfig {
   autoRespawn: boolean;
   autoReconnect: boolean;
   antiAfk: boolean;
+  antiBot: boolean;
 }
 
 export interface BotStatus {
@@ -77,10 +78,18 @@ export class MCBot extends EventEmitter {
     this.emit('players', this.players);
   }
 
-  connect(cfg: BotConfig) {
+  connect(cfg: BotConfig, isReconnect = false) {
     if (this.status.connecting || this.status.connected) this.disconnect(true);
     this.manualDisconnect = false;
     this.cfg = cfg;
+    // Kullanıcı elle bağlandığında anti-bot sayaçlarını sıfırla
+    // (otomatik yeniden bağlanma döngüsünde sayaç korunmalı)
+    if (!isReconnect) {
+      this._everSpawned = false;
+      this._reconnectAttempts = 0;
+      this._lastCaptchaCode = '';
+      this._lastAnswer = '';
+    }
     this.setStatus({
       connecting: true,
       connected: false,
@@ -264,63 +273,124 @@ export class MCBot extends EventEmitter {
   }
 
   private scheduleReconnect() {
-    if (!this.cfg?.autoReconnect || this.manualDisconnect) return;
+    if (this.manualDisconnect) return;
+    // Anti-bot: hiç spawn olmadan düştüysek (çoğu anti-bot ilk bağlantıyı keser),
+    // autoReconnect kapalı olsa bile hızlıca tekrar dene.
+    const earlyAntiBot = this.cfg?.antiBot && !this._everSpawned;
+    if (!this.cfg?.autoReconnect && !earlyAntiBot) return;
     if (this.reconnectTimer) return;
-    this.pushChat({ kind: 'info', text: '10 saniye içinde yeniden bağlanılacak...' });
+    this._reconnectAttempts++;
+    if (earlyAntiBot && this._reconnectAttempts > 60) {
+      this.pushChat({ kind: 'error', text: 'Anti-bot 60 denemede geçilemedi. Sürümü kontrol et ya da sunucu farklı bir doğrulama kullanıyor olabilir.' });
+      return;
+    }
+    const delay = earlyAntiBot ? 4000 : 10_000;
+    this.pushChat({ kind: 'info', text: `${Math.round(delay / 1000)} saniye içinde yeniden bağlanılacak${earlyAntiBot ? ` (anti-bot geçiş denemesi #${this._reconnectAttempts})` : ''}...` });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      if (this.cfg && !this.manualDisconnect) this.connect(this.cfg);
-    }, 10_000);
+      if (this.cfg && !this.manualDisconnect) this.connect(this.cfg, true);
+    }, delay);
   }
 
-  private tryAutoAuth(raw: string) {
-    if (!this.cfg?.autoAuth || !this.cfg.authPassword) return;
-    const pw = this.cfg.authPassword;
+  /** Anti-bot hareket kontrollerini geçmek için spawn sonrası insansı davranış */
+  private humanizeJoin() {
+    const bot = this.bot;
+    if (!bot) return;
+    const steps: Array<() => void> = [
+      () => { try { bot.look(Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.6, false); } catch {} },
+      () => { try { bot.setControlState('forward', true); } catch {} },
+      () => { try { bot.setControlState('forward', false); bot.setControlState('jump', true); } catch {} },
+      () => { try { bot.setControlState('jump', false); bot.setControlState('back', true); } catch {} },
+      () => { try { bot.setControlState('back', false); bot.look(Math.random() * Math.PI * 2, 0, false); } catch {} },
+      () => { try { bot.swingArm?.('right'); } catch {} },
+    ];
+    steps.forEach((fn, i) => setTimeout(() => { if (this.bot && this.status.connected) fn(); }, 500 + i * 500));
+  }
+
+  /** Sunucudan gelen her metni (sohbet/sistem/title/bossbar/scoreboard) işler:
+   *  otomatik register/login + çok biçimli captcha çözümü */
+  private onServerText(raw: string) {
+    if (!raw || !raw.trim()) return;
+    const pw = this.cfg?.authPassword || '';
     const low = raw.toLowerCase();
 
-    const askRegister =
-      /\/register\b/.test(low) ||
-      /kay[ıi]t olun/.test(low) ||
-      /register with/.test(low) ||
-      /please register/.test(low) ||
-      /\bkay[ıi]t ol\b/.test(low);
-    const askLogin =
-      /\/login\b/.test(low) ||
-      /please login/.test(low) ||
-      /giri[şs] yap/.test(low) ||
-      /\/l\b/.test(low) ||
-      /\bşifreni[zi]?\s*(gir|yaz)/.test(low);
+    // 1) Register / Login
+    if (this.cfg?.autoAuth && pw) {
+      const askRegister =
+        /\/register\b/.test(low) || /\/reg\b/.test(low) ||
+        /kay[ıi]t ol/.test(low) || /register (with|using)/.test(low) ||
+        /please register/.test(low) || /hen[üu]z kay[ıi]t/.test(low) ||
+        /not registered/.test(low);
+      const askLogin =
+        /\/login\b/.test(low) || /\/l\b/.test(low) ||
+        /please login/.test(low) || /log ?in/.test(low) ||
+        /giri[şs] yap/.test(low) || /şifreni[zi]?\s*(gir|yaz)/.test(low) ||
+        /zaten kay[ıi]tl[ıi]/.test(low) || /already registered/.test(low);
 
-    if (askRegister && !this._didRegister) {
-      this._didRegister = true;
-      setTimeout(() => this.bot?.chat(`/register ${pw} ${pw}`), 800);
-      setTimeout(() => this.bot?.chat(`/reg ${pw} ${pw}`), 2200);
-    } else if (askLogin && !this._didLogin) {
-      this._didLogin = true;
-      setTimeout(() => this.bot?.chat(`/login ${pw}`), 800);
-      setTimeout(() => this.bot?.chat(`/l ${pw}`), 2200);
-    }
-
-    const captchaCtx = /captcha|do[ğg]rula|verify|verif|code|kod/.test(low);
-    if (captchaCtx) {
-      const m = raw.match(/(\d+)\s*([+\-*xX\/])\s*(\d+)\s*=?/);
-      if (m) {
-        const a = parseInt(m[1], 10), b = parseInt(m[3], 10);
-        const op = m[2];
-        let r: number | null = null;
-        if (op === '+') r = a + b;
-        else if (op === '-') r = a - b;
-        else if (op === '*' || op === 'x' || op === 'X') r = a * b;
-        else if (op === '/' && b !== 0) r = Math.floor(a / b);
-        if (r !== null) setTimeout(() => this.bot?.chat(String(r)), 700);
+      if (askRegister && !this._didRegister) {
+        this._didRegister = true;
+        this.answer(`/register ${pw} ${pw}`, 600);
+        this.answer(`/reg ${pw} ${pw}`, 2000);
+        this.answer(`/l ${pw}`, 3600); // bazı sunucular register sonrası login ister
+      } else if (askLogin && !this._didLogin) {
+        this._didLogin = true;
+        this.answer(`/login ${pw}`, 600);
+        this.answer(`/l ${pw}`, 2000);
       }
-      const codeMatch = raw.match(/\b(?:kod|code|captcha)[^A-Za-z0-9]*([A-Za-z0-9]{3,8})\b/i);
-      if (codeMatch) setTimeout(() => this.bot?.chat(codeMatch[1]), 900);
     }
+
+    // 2) Captcha — her metinde dene (anti-bot context kelimesi olmasa bile title/bossbar olabilir)
+    const captchaCtx = /captcha|do[ğg]rula|verify|verif|confirm|kod|code|antibot|anti-bot|çöz|solve|güvenlik|security|insan|human|robot/.test(low);
+
+    // 2a) Matematik: "3 + 5", "12 x 2 = ?"
+    const math = raw.match(/(\d{1,4})\s*([+\-*xX×\/])\s*(\d{1,4})/);
+    if (math && (captchaCtx || /[=?]/.test(raw))) {
+      const a = parseInt(math[1], 10), b = parseInt(math[3], 10);
+      const op = math[2];
+      let r: number | null = null;
+      if (op === '+') r = a + b;
+      else if (op === '-') r = a - b;
+      else if (op === '*' || op === 'x' || op === 'X' || op === '×') r = a * b;
+      else if (op === '/' && b !== 0) r = Math.round(a / b);
+      if (r !== null) { this._lastCaptchaCode = String(r); this.answer(String(r), 500); }
+    }
+
+    // 2b) "type/write/yaz/gir/enter <CODE>" kalıbı
+    const typeCode = raw.match(/\b(?:type|write|enter|yaz|gir|girin|yaz[ıi]n|say)\b[^A-Za-z0-9]{0,12}([A-Za-z0-9]{3,10})\b/i);
+    if (typeCode) { this._lastCaptchaCode = typeCode[1]; this.answer(typeCode[1], 650); }
+
+    // 2c) "kod: ABC123" / "code: ABC123" / "captcha ABC123"
+    const labeled = raw.match(/\b(?:kod|code|captcha|do[ğg]rulama)\b[^A-Za-z0-9]{0,8}([A-Za-z0-9]{3,10})\b/i);
+    if (labeled && !/captcha$/i.test(labeled[1])) { this._lastCaptchaCode = labeled[1]; this.answer(labeled[1], 700); }
+
+    // 2d) Sadece büyük harf/rakam kod bloğu, captcha context varsa (örn "AB3K9")
+    if (captchaCtx && !typeCode && !labeled && !math) {
+      const token = raw.match(/\b([A-Z0-9]{4,8})\b/);
+      // En az bir harf içersin ki saf sayı (süre/sayaç) yakalanmasın
+      if (token && /[A-Z]/.test(token[1])) {
+        this._lastCaptchaCode = token[1]; this.answer(token[1], 750);
+      }
+    }
+  }
+
+  /** Mesajı tekrar/spam önleyerek gönderir */
+  private answer(text: string, delayMs = 500) {
+    const now = Date.now();
+    if (text === this._lastAnswer && now - this._lastAnswerAt < 2500) return;
+    this._lastAnswer = text;
+    this._lastAnswerAt = now;
+    setTimeout(() => {
+      if (this.bot) { try { this.bot.chat(text); } catch {} }
+    }, delayMs);
   }
 
   private _didRegister = false;
   private _didLogin = false;
+  private _everSpawned = false;
+  private _lastCaptchaCode = '';
+  private _lastAnswer = '';
+  private _lastAnswerAt = 0;
+  private _reconnectAttempts = 0;
 
   private bindEvents() {
     const bot = this.bot;
@@ -333,6 +403,8 @@ export class MCBot extends EventEmitter {
 
     bot.once('spawn', () => {
       this.clearWatchdog();
+      this._everSpawned = true;
+      this._reconnectAttempts = 0;
       this._didRegister = false;
       this._didLogin = false;
       this.setStatus({
@@ -346,6 +418,10 @@ export class MCBot extends EventEmitter {
       });
       this.refreshPlayers();
       this.pushChat({ kind: 'ok', text: `Sunucuya girildi — ${bot.username} (${bot.version})` });
+      if (this.cfg?.antiBot) {
+        this.pushChat({ kind: 'info', text: 'Anti-bot modu aktif: insansı hareket + captcha/doğrulama otomatik.' });
+        this.humanizeJoin();
+      }
       if (this.cfg?.antiAfk) this.startAntiAfk();
     });
 
@@ -388,7 +464,37 @@ export class MCBot extends EventEmitter {
       const m = line.match(/^<([^>]{1,16})>\s?(.*)$/);
       if (m) this.pushChat({ kind: 'chat', from: m[1], text: m[2] });
       else this.pushChat({ kind: 'system', text: line });
-      this.tryAutoAuth(line);
+      this.onServerText(line);
+    });
+
+    // Captcha / doğrulama title, boss bar ve scoreboard'da da gösterilebilir — hepsini dinle
+    bot.on('title', (text: any) => {
+      const t = componentToText(text);
+      if (!t) return;
+      this.pushChat({ kind: 'system', text: `[title] ${t}` });
+      this.onServerText(t);
+    });
+
+    bot.on('bossBarCreated', (bar: any) => this.onServerText(componentToText(bar?.title)));
+    bot.on('bossBarUpdated', (bar: any) => this.onServerText(componentToText(bar?.title)));
+    bot.on('scoreboardCreated', (sb: any) => this.onServerText(componentToText(sb?.title)));
+    bot.on('scoreboardTitleChanged', (sb: any) => this.onServerText(componentToText(sb?.title)));
+
+    // Bazı anti-botlar resource pack kabulüyle doğrular — otomatik kabul et
+    bot.on('resourcePack', () => {
+      try { bot.acceptResourcePack?.(); this.pushChat({ kind: 'info', text: 'Resource pack otomatik kabul edildi.' }); } catch {}
+    });
+
+    // Tabela (sign) captcha'sı: sunucu tabela editörü açarsa son gördüğümüz kodu yaz
+    bot.on('signOpen', (block: any) => {
+      if (!this.cfg?.antiBot) return;
+      const code = this._lastCaptchaCode;
+      setTimeout(() => {
+        try {
+          bot.updateSign?.(block, code || 'verify');
+          this.pushChat({ kind: 'info', text: `Tabela captcha'sına "${code || 'verify'}" yazıldı.` });
+        } catch {}
+      }, 600);
     });
 
     bot.on('kicked', (reason: any) => {

@@ -47,6 +47,7 @@ interface ConnectForm {
   autoRespawn: boolean;
   autoReconnect: boolean;
   antiAfk: boolean;
+  antiBot: boolean;
 }
 
 const LS_KEY = 'mavi-mc-bot:conn';
@@ -72,6 +73,7 @@ function loadConnForm(): ConnectForm {
     autoRespawn: true,
     autoReconnect: true,
     antiAfk: false,
+    antiBot: true,
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -202,6 +204,7 @@ function renderConnectCard(): HTMLElement {
       input('authPassword', { type: 'password', placeholder: 'authme / login şifresi' }),
     ]),
     el('div', { class: 'field checks' }, [
+      check('antiBot', 'Anti-bot geçişi (captcha + doğrulama + hızlı yeniden bağlan)'),
       check('autoAuth', 'Otomatik /register ve /login'),
       check('autoRespawn', 'Ölünce otomatik respawn'),
       check('autoReconnect', 'Kopunca otomatik yeniden bağlan'),
