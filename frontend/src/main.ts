@@ -125,8 +125,8 @@ function renderTopbar(): HTMLElement {
   return el('header', { class: 'topbar' }, [
     el('div', { class: 'brand' }, [
       el('span', { class: 'logo' }, ['MB']),
-      'Mavi MC Bot',
-      el('small', {}, ['· Yönetim Paneli']),
+      'Mavi Bot',
+      el('small', {}, ['· Minecraft Yönetim Paneli']),
     ]),
     el('div', { class: 'status-group' }, [serverPill, pill].filter(Boolean) as Node[]),
   ]);

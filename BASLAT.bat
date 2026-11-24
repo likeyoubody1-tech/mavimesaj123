@@ -1,7 +1,7 @@
 @echo off
-title Mavi MC Bot - Yonetim Paneli
+title Mavi Bot - Yonetim Paneli
 echo.
-echo ==== Mavi MC Bot ====
+echo ==== Mavi Bot ====
 echo.
 cd /d "%~dp0"
 

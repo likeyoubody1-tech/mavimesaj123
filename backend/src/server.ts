@@ -134,7 +134,7 @@ wss.on('connection', (ws) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`[Mavi MC Bot] Panel: http://localhost:${PORT}`);
+  console.log(`[Mavi Bot] Panel: http://localhost:${PORT}`);
 });
 
 process.on('SIGINT', () => {

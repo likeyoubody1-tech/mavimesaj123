@@ -1,4 +1,4 @@
-# Mavi MC Bot — Minecraft Botu + Web Yönetim Paneli
+# Mavi Bot — Minecraft Botu + Web Yönetim Paneli
 
 Tarayıcıdan yönettiğin bir Minecraft botu. **Mineflayer** + **Express** +
 **Vite/TypeScript** ile yazılmış. Mavi gradient temalı ultra hızlı panel.
