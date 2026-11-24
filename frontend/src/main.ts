@@ -1,1011 +1,550 @@
-import "./style.css";
-import { auth as fbAuth, db as fbDb } from "./firebase";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { ref, set, update, get } from "firebase/database";
+import './style.css';
 
-type User = { username: string; friendCode: string; id: string };
-type Friend = { username: string; friendCode: string; online?: boolean };
-type Message = { id: string; from: string; to: string; text: string; timestamp: string };
-
-const API = (import.meta as any).env?.VITE_API_URL || "";
-
-async function getIP(): Promise<string> {
-  try {
-    const r = await fetch("https://api.ipify.org?format=json");
-    const j = await r.json();
-    return j.ip || "unknown";
-  } catch { return "unknown"; }
-}
-function toEmail(username: string) {
-  const clean = username.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
-  return `${clean}@mavimesaj.local`;
+interface BotStatus {
+  connected: boolean;
+  connecting: boolean;
+  host?: string;
+  port?: number;
+  username?: string;
+  health?: number;
+  food?: number;
+  xp?: number;
+  position?: { x: number; y: number; z: number };
+  dimension?: string;
+  version?: string;
+  lastError?: string;
+  joinedAt?: number;
 }
 
-// DOM
-const authView = document.getElementById("authView") as HTMLElement;
-const appView = document.getElementById("appView") as HTMLElement;
-const topbarRight = document.getElementById("topbarRight") as HTMLElement;
-const topUser = document.getElementById("topUser") as HTMLElement;
-const tabLogin = document.getElementById("tabLogin") as HTMLButtonElement;
-const tabRegister = document.getElementById("tabRegister") as HTMLButtonElement;
-const authForm = document.getElementById("authForm") as HTMLFormElement;
-const inpUser = document.getElementById("inpUser") as HTMLInputElement;
-const inpPass = document.getElementById("inpPass") as HTMLInputElement;
-const btnAuth = document.getElementById("btnAuth") as HTMLButtonElement;
-const authError = document.getElementById("authError") as HTMLElement;
-const btnLogout = document.getElementById("btnLogout") as HTMLButtonElement;
-const btnToggleSidebar = document.getElementById("btnToggleSidebar") as HTMLButtonElement;
-const btnSwapSidebar = document.getElementById("btnSwapSidebar") as HTMLButtonElement;
-const sidebarHandle = document.getElementById("sidebarHandle") as HTMLElement;
-
-const myAvatar = document.getElementById("myAvatar") as HTMLElement;
-const myAvatarImg = document.getElementById("myAvatarImg") as HTMLImageElement;
-const btnAvatar = document.getElementById("btnAvatar") as HTMLButtonElement;
-const inpAvatar = document.getElementById("inpAvatar") as HTMLInputElement;
-const myName = document.getElementById("myName") as HTMLElement;
-const btnChangeAvatar = document.getElementById("btnChangeAvatar") as HTMLButtonElement;
-const btnRemoveAvatar = document.getElementById("btnRemoveAvatar") as HTMLButtonElement;
-const avatarModal = document.getElementById("avatarModal") as HTMLElement;
-const avatarPromptView = document.getElementById("avatarPromptView") as HTMLElement;
-const avatarEditorView = document.getElementById("avatarEditorView") as HTMLElement;
-const avatarBackdrop = document.getElementById("avatarBackdrop") as HTMLElement;
-const btnAvatarNow = document.getElementById("btnAvatarNow") as HTMLButtonElement;
-const btnAvatarLater = document.getElementById("btnAvatarLater") as HTMLButtonElement;
-const editorFrame = document.getElementById("editorFrame") as HTMLElement;
-const editorImg = document.getElementById("editorImg") as HTMLImageElement;
-const zoomRange = document.getElementById("zoomRange") as HTMLInputElement;
-const zoomVal = document.getElementById("zoomVal") as HTMLElement;
-const btnEditorCancel = document.getElementById("btnEditorCancel") as HTMLButtonElement;
-const btnEditorSave = document.getElementById("btnEditorSave") as HTMLButtonElement;
-const myCode = document.getElementById("myCode") as HTMLElement;
-const btnCopyCode = document.getElementById("btnCopyCode") as HTMLButtonElement;
-const inpFriendCode = document.getElementById("inpFriendCode") as HTMLInputElement;
-const btnAddFriend = document.getElementById("btnAddFriend") as HTMLButtonElement;
-const addFriendMsg = document.getElementById("addFriendMsg") as HTMLElement;
-const inpSearch = document.getElementById("inpSearch") as HTMLInputElement;
-const friendList = document.getElementById("friendList") as HTMLElement;
-const friendCount = document.getElementById("friendCount") as HTMLElement;
-const onlineInfo = document.getElementById("onlineInfo") as HTMLElement;
-
-const chatEmpty = document.getElementById("chatEmpty") as HTMLElement;
-const chatActive = document.getElementById("chatActive") as HTMLElement;
-const peerAvatar = document.getElementById("peerAvatar") as HTMLElement;
-const peerAvatarText = document.getElementById("peerAvatarText") as HTMLElement;
-const peerAvatarImg = document.getElementById("peerAvatarImg") as HTMLImageElement;
-const peerName = document.getElementById("peerName") as HTMLElement;
-const peerStatus = document.getElementById("peerStatus") as HTMLElement;
-const messagesEl = document.getElementById("messages") as HTMLElement;
-const msgForm = document.getElementById("msgForm") as HTMLFormElement;
-const inpMsg = document.getElementById("inpMsg") as HTMLInputElement;
-const btnVoiceCall = document.getElementById("btnVoiceCall") as HTMLButtonElement;
-const btnVideoCall = document.getElementById("btnVideoCall") as HTMLButtonElement;
-
-const callModal = document.getElementById("callModal") as HTMLElement;
-const callTitle = document.getElementById("callTitle") as HTMLElement;
-const callTimer = document.getElementById("callTimer") as HTMLElement;
-const remoteVideo = document.getElementById("remoteVideo") as HTMLVideoElement;
-const localVideo = document.getElementById("localVideo") as HTMLVideoElement;
-const audioOnly = document.getElementById("audioOnly") as HTMLElement;
-const callAvatar = document.getElementById("callAvatar") as HTMLElement;
-const callPeerName = document.getElementById("callPeerName") as HTMLElement;
-const callState = document.getElementById("callState") as HTMLElement;
-const btnMute = document.getElementById("btnMute") as HTMLButtonElement;
-const btnCam = document.getElementById("btnCam") as HTMLButtonElement;
-const btnEndCall = document.getElementById("btnEndCall") as HTMLButtonElement;
-const btnSpeaker = document.getElementById("btnSpeaker") as HTMLButtonElement;
-const callInfo = document.getElementById("callInfo") as HTMLElement;
-
-const incomingToast = document.getElementById("incomingToast") as HTMLElement;
-const incomingAvatar = document.getElementById("incomingAvatar") as HTMLElement;
-const incomingName = document.getElementById("incomingName") as HTMLElement;
-const incomingType = document.getElementById("incomingType") as HTMLElement;
-const btnAcceptCall = document.getElementById("btnAcceptCall") as HTMLButtonElement;
-const btnRejectCall = document.getElementById("btnRejectCall") as HTMLButtonElement;
-
-const toastEl = document.getElementById("toast") as HTMLElement;
-
-let token: string | null = localStorage.getItem("mavi_token");
-let me: User | null = null;
-let friends: Friend[] = [];
-let selected: string | null = null;
-let messages: Message[] = [];
-let ws: WebSocket | null = null;
-let mode: "login" | "register" = "login";
-
-let pc: RTCPeerConnection | null = null;
-let localStream: MediaStream | null = null;
-let callWith: string | null = null;
-let callType: "voice" | "video" | null = null;
-let timerInterval: number | null = null;
-let callStart = 0;
-let pendingOffer: any = null;
-
-// Helpers
-function toast(msg: string, ms = 2500) {
-  toastEl.textContent = msg;
-  toastEl.classList.remove("hidden");
-  setTimeout(() => toastEl.classList.add("hidden"), ms);
-}
-function initials(name: string) { return name.slice(0, 2).toUpperCase(); }
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-}
-function setAuthMode(m: "login" | "register") {
-  mode = m;
-  tabLogin.classList.toggle("active", m === "login");
-  tabRegister.classList.toggle("active", m === "register");
-  btnAuth.textContent = m === "login" ? "Giriş Yap" : "Hesap Oluştur";
-}
-tabLogin.onclick = () => setAuthMode("login");
-tabRegister.onclick = () => setAuthMode("register");
-
-async function api(path: string, opts: RequestInit = {}) {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(opts.headers as any) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { ...opts, headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Hata ${res.status}`);
-  return data;
+interface ChatLine {
+  id: number;
+  ts: number;
+  kind: 'system' | 'chat' | 'whisper' | 'self' | 'info' | 'error' | 'ok';
+  from?: string;
+  text: string;
 }
 
-// Sidebar ayarlanabilir
-function initSidebar() {
-  const savedWidth = localStorage.getItem("mavi_sidebar_width");
-  if (savedWidth) document.documentElement.style.setProperty("--sidebar-width", savedWidth + "px");
-  const pos = localStorage.getItem("mavi_sidebar_pos");
-  if (pos === "right") appView.classList.add("sidebar-right");
-  const collapsed = localStorage.getItem("mavi_sidebar_collapsed") === "1";
-  if (collapsed) appView.classList.add("sidebar-collapsed");
+interface Task {
+  id: string;
+  name: string;
+  template: string;
+  intervalSeconds: number;
+  enabled: boolean;
+  perPlayerDelayMs: number;
+  lastRun?: number;
+  runCount: number;
 }
-initSidebar();
-btnToggleSidebar.onclick = () => {
-  appView.classList.toggle("sidebar-collapsed");
-  localStorage.setItem("mavi_sidebar_collapsed", appView.classList.contains("sidebar-collapsed") ? "1" : "0");
+
+interface ConnectForm {
+  host: string;
+  port: number;
+  username: string;
+  version: string;
+  auth: 'offline' | 'microsoft';
+  authPassword: string;
+  autoAuth: boolean;
+  autoRespawn: boolean;
+  autoReconnect: boolean;
+  antiAfk: boolean;
+}
+
+const LS_KEY = 'mavi-mc-bot:conn';
+
+const state = {
+  status: { connected: false, connecting: false } as BotStatus,
+  players: [] as string[],
+  tasks: [] as Task[],
+  chat: [] as ChatLine[],
+  conn: loadConnForm(),
+  draftTask: { name: '', template: '/msg [everyone] merhaba :)', intervalSeconds: 10, perPlayerDelayMs: 400 },
 };
-btnSwapSidebar.onclick = () => {
-  appView.classList.toggle("sidebar-right");
-  localStorage.setItem("mavi_sidebar_pos", appView.classList.contains("sidebar-right") ? "right" : "left");
-  toast(appView.classList.contains("sidebar-right") ? "Menü sağa alındı" : "Menü sola alındı");
-};
-let dragging = false;
-sidebarHandle.addEventListener("mousedown", (e) => {
-  dragging = true;
-  document.body.style.cursor = "col-resize";
-  e.preventDefault();
-});
-window.addEventListener("mousemove", (e) => {
-  if (!dragging) return;
-  const isRight = appView.classList.contains("sidebar-right");
-  let newWidth: number;
-  if (isRight) newWidth = window.innerWidth - e.clientX;
-  else newWidth = e.clientX;
-  newWidth = Math.max(240, Math.min(480, newWidth));
-  document.documentElement.style.setProperty("--sidebar-width", newWidth + "px");
-});
-window.addEventListener("mouseup", () => {
-  if (dragging) {
-    dragging = false;
-    document.body.style.cursor = "";
-    const w = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width");
-    localStorage.setItem("mavi_sidebar_width", parseInt(w).toString());
-  }
-});
 
-// Profil fotoğrafı ve ayarlanabilir editör
-function avatarKey(username: string) { return `mavi_avatar_${username}`; }
-function loadMyAvatar() {
-  if (!me) return;
-  const data = localStorage.getItem(avatarKey(me.username));
-  if (data) {
-    myAvatarImg.src = data;
-    myAvatarImg.classList.remove("hidden");
-    myAvatar.classList.add("hidden");
-    btnAvatar.style.background = "transparent";
-    btnRemoveAvatar.classList.remove("hidden");
-  } else if (fbAuth.currentUser) {
-    get(ref(fbDb, `users/${fbAuth.currentUser.uid}/avatar`)).then(s => {
-      const v = s.val();
-      if (v) {
-        localStorage.setItem(avatarKey(me!.username), v);
-        myAvatarImg.src = v;
-        myAvatarImg.classList.remove("hidden");
-        myAvatar.classList.add("hidden");
-        btnAvatar.style.background = "transparent";
-        btnRemoveAvatar.classList.remove("hidden");
-      } else {
-        btnRemoveAvatar.classList.add("hidden");
-      }
-    }).catch(()=>{});
-  } else {
-    btnRemoveAvatar.classList.add("hidden");
-  }
-}
-function getAvatarFor(username: string): string | null {
-  return localStorage.getItem(avatarKey(username));
-}
-function updatePeerAvatar(username: string) {
-  const data = getAvatarFor(username);
-  if (data) {
-    peerAvatarImg.src = data;
-    peerAvatarImg.classList.remove("hidden");
-    peerAvatarText.classList.add("hidden");
-    peerAvatar.style.background = "transparent";
-  } else {
-    peerAvatarImg.classList.add("hidden");
-    peerAvatarText.classList.remove("hidden");
-    peerAvatarText.textContent = initials(username);
-    peerAvatar.style.background = "";
-  }
-}
-
-// Avatar modal - soru ve ayarlama (tam oturan)
-let editorState = { scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, naturalW: 0, naturalH: 0, minScale: 1 };
-function openAvatarPrompt() {
-  avatarPromptView.classList.remove("hidden");
-  avatarEditorView.classList.add("hidden");
-  avatarModal.classList.remove("hidden");
-}
-function closeAvatarModal() {
-  avatarModal.classList.add("hidden");
-}
-function openEditorWithDataUrl(dataUrl: string) {
-  avatarPromptView.classList.add("hidden");
-  avatarEditorView.classList.remove("hidden");
-  avatarModal.classList.remove("hidden");
-  editorImg.onload = () => {
-    editorState.naturalW = editorImg.naturalWidth;
-    editorState.naturalH = editorImg.naturalHeight;
-    const frame = 220;
-    // tam kaplama için en küçük ölçek
-    const scaleFit = Math.max(frame / editorState.naturalW, frame / editorState.naturalH);
-    editorState.minScale = scaleFit;
-    editorState.scale = scaleFit;
-    // tam ortala
-    editorState.x = (frame - editorState.naturalW * editorState.scale) / 2;
-    editorState.y = (frame - editorState.naturalH * editorState.scale) / 2;
-    // img boyutunu doğal boyuta sabitle, transform ile ölçekle
-    editorImg.style.width = editorState.naturalW + "px";
-    editorImg.style.height = editorState.naturalH + "px";
-    zoomRange.min = String(scaleFit);
-    zoomRange.max = String(scaleFit * 3);
-    zoomRange.step = "0.01";
-    zoomRange.value = String(scaleFit);
-    applyEditorTransform();
+function loadConnForm(): ConnectForm {
+  const def: ConnectForm = {
+    host: '',
+    port: 25565,
+    username: 'MaviBot' + Math.floor(Math.random() * 90 + 10),
+    version: '',
+    auth: 'offline',
+    authPassword: '',
+    autoAuth: true,
+    autoRespawn: true,
+    autoReconnect: true,
+    antiAfk: false,
   };
-  editorImg.src = dataUrl;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return { ...def, ...JSON.parse(raw) };
+  } catch {}
+  return def;
 }
-function applyEditorTransform() {
-  // tam piksel hizalama için translate + scale ayrı
-  editorImg.style.transform = `translate(${editorState.x}px, ${editorState.y}px) scale(${editorState.scale})`;
-  editorImg.style.transformOrigin = "top left";
-  const pct = Math.round((editorState.scale / editorState.minScale) * 100);
-  zoomVal.textContent = pct + "%";
-  // sınırları uygula
-  clampEditorPos();
+
+function saveConnForm() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state.conn)); } catch {}
 }
-function clampEditorPos() {
-  const frame = 220;
-  const w = editorState.naturalW * editorState.scale;
-  const h = editorState.naturalH * editorState.scale;
-  const minX = Math.min(0, frame - w);
-  const minY = Math.min(0, frame - h);
-  const maxX = 0;
-  const maxY = 0;
-  editorState.x = Math.max(minX, Math.min(maxX, editorState.x));
-  editorState.y = Math.max(minY, Math.min(maxY, editorState.y));
-}
-function saveEditor() {
-  if (!me || !editorImg.src) return;
-  const frame = 220;
-  const dpr = 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = frame * dpr; canvas.height = frame * dpr;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(dpr, dpr);
-  // tam oturan kare - beyaz dolgu sonra tam kaplama
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, frame, frame);
-  // doğrudan çiz, köşe yuvarlama CSS'de yapılacak
-  ctx.drawImage(editorImg, editorState.x, editorState.y, editorState.naturalW * editorState.scale, editorState.naturalH * editorState.scale);
-  const out = canvas.toDataURL("image/jpeg", 0.88);
-  localStorage.setItem(avatarKey(me.username), out);
-  localStorage.setItem(`mavi_avatar_global_${me.username}`, out);
-  myAvatarImg.src = out;
-  myAvatarImg.classList.remove("hidden");
-  myAvatar.classList.add("hidden");
-  btnAvatar.style.background = "transparent";
-  btnRemoveAvatar.classList.remove("hidden");
-  if (fbAuth.currentUser) {
-    update(ref(fbDb, `users/${fbAuth.currentUser.uid}`), { avatar: out }).catch(()=>{});
-    set(ref(fbDb, `avatars/${me.username}`), out).catch(()=>{});
+
+const app = document.getElementById('app')!;
+
+function el<T extends HTMLElement = HTMLElement>(tag: string, attrs: Record<string, any> = {}, children: (Node | string)[] = []): T {
+  const node = document.createElement(tag) as any;
+  for (const k of Object.keys(attrs)) {
+    const v = attrs[k];
+    if (k === 'class') node.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === 'html') node.innerHTML = v;
+    else if (v !== undefined && v !== null && v !== false) node.setAttribute(k, v === true ? '' : String(v));
   }
-  toast("Profil fotoğrafı kaydedildi");
-  renderFriends();
-  if (selected) updatePeerAvatar(selected);
-  closeAvatarModal();
+  for (const c of children) {
+    if (c == null) continue;
+    node.append(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return node;
 }
-// Editor etkileşimleri - tam oturan sürükleme
-editorFrame.addEventListener("mousedown", (e) => {
-  editorState.dragging = true;
-  editorState.startX = e.clientX - editorState.x;
-  editorState.startY = e.clientY - editorState.y;
-  editorFrame.style.cursor = "grabbing";
-  e.preventDefault();
-});
-window.addEventListener("mousemove", (e) => {
-  if (!editorState.dragging) return;
-  editorState.x = e.clientX - editorState.startX;
-  editorState.y = e.clientY - editorState.startY;
-  clampEditorPos();
-  applyEditorTransform();
-});
-window.addEventListener("mouseup", () => {
-  if (editorState.dragging) { editorState.dragging = false; editorFrame.style.cursor = "grab"; }
-});
-editorFrame.addEventListener("touchstart", (e) => {
-  const t = e.touches[0];
-  editorState.dragging = true;
-  editorState.startX = t.clientX - editorState.x;
-  editorState.startY = t.clientY - editorState.y;
-}, { passive: true });
-window.addEventListener("touchmove", (e) => {
-  if (!editorState.dragging) return;
-  const t = e.touches[0];
-  editorState.x = t.clientX - editorState.startX;
-  editorState.y = t.clientY - editorState.startY;
-  clampEditorPos();
-  applyEditorTransform();
-}, { passive: true });
-window.addEventListener("touchend", () => { editorState.dragging = false; });
-zoomRange.addEventListener("input", () => {
-  const newScale = parseFloat(zoomRange.value);
-  const frame = 220;
-  const oldScale = editorState.scale;
-  // frame merkezinin img içindeki oranını koru
-  const cx = (frame/2 - editorState.x) / oldScale;
-  const cy = (frame/2 - editorState.y) / oldScale;
-  editorState.scale = newScale;
-  editorState.x = frame/2 - cx * newScale;
-  editorState.y = frame/2 - cy * newScale;
-  clampEditorPos();
-  applyEditorTransform();
-});
-btnAvatarNow.onclick = () => { inpAvatar.click(); };
-btnAvatarLater.onclick = () => closeAvatarModal();
-btnEditorCancel.onclick = () => {
-  // editörden prompta dön, eğer prompt kapalı ise sadece kapat
-  if (!localStorage.getItem(avatarKey(me!.username))) {
-    avatarEditorView.classList.add("hidden");
-    avatarPromptView.classList.remove("hidden");
+
+function render() {
+  app.innerHTML = '';
+  app.append(el('div', { class: 'app' }, [renderTopbar(), renderMain()]));
+  if (!toastRoot.parentNode) document.body.append(toastRoot);
+}
+
+function renderTopbar(): HTMLElement {
+  const s = state.status;
+  let pill: HTMLElement;
+  if (s.connected) {
+    pill = el('span', { class: 'pill on' }, [el('span', { class: 'dot' }), `Bağlı · ${s.username || ''}`]);
+  } else if (s.connecting) {
+    pill = el('span', { class: 'pill warn' }, [el('span', { class: 'dot' }), 'Bağlanıyor...']);
   } else {
-    closeAvatarModal();
+    pill = el('span', { class: 'pill' }, [el('span', { class: 'dot' }), 'Çevrimdışı']);
   }
-};
-btnEditorSave.onclick = saveEditor;
-avatarBackdrop.onclick = () => closeAvatarModal();
-btnAvatar.onclick = () => {
-  // direkt editör promptu aç, mevcut foto varsa editörle aç
-  const existing = me ? getAvatarFor(me.username) : null;
-  if (existing) {
-    openEditorWithDataUrl(existing);
-  } else {
-    openAvatarPrompt();
-  }
-};
-inpAvatar.onchange = () => {
-  const file = inpAvatar.files?.[0];
-  if (!file || !me) return;
-  if (file.size > 5 * 1024 * 1024) { toast("Dosya 5 MB'den küçük olmalı"); return; }
-  if (!file.type.startsWith("image/")) { toast("Lütfen bir görsel seçin"); return; }
-  const reader = new FileReader();
-  reader.onload = () => openEditorWithDataUrl(reader.result as string);
-  reader.readAsDataURL(file);
-  inpAvatar.value = "";
-};
-btnChangeAvatar.onclick = () => {
-  // her zaman değiştirme imkanı - doğrudan dosya seçtir
-  inpAvatar.click();
-};
-btnRemoveAvatar.onclick = async () => {
-  if (!me) return;
-  localStorage.removeItem(avatarKey(me.username));
-  localStorage.removeItem(`mavi_avatar_global_${me.username}`);
-  myAvatarImg.classList.add("hidden");
-  myAvatarImg.removeAttribute("src");
-  myAvatar.textContent = initials(me.username);
-  myAvatar.classList.remove("hidden");
-  btnAvatar.style.background = "";
-  btnRemoveAvatar.classList.add("hidden");
-  if (fbAuth.currentUser) {
-    await update(ref(fbDb, `users/${fbAuth.currentUser.uid}`), { avatar: null }).catch(()=>{});
-    // @ts-ignore
-    await set(ref(fbDb, `avatars/${me.username}`), null).catch(()=>{});
-  }
-  toast("Profil fotoğrafı kaldırıldı");
-  renderFriends();
-  if (selected) updatePeerAvatar(selected);
-};
+  const serverPill = s.host
+    ? el('span', { class: 'pill' }, [el('span', { class: 'dot' }), `${s.host}:${s.port}`])
+    : null;
 
-async function checkAuth() {
-  if (!token) { showAuth(); return; }
+  return el('header', { class: 'topbar' }, [
+    el('div', { class: 'brand' }, [
+      el('span', { class: 'logo' }, ['MB']),
+      'Mavi MC Bot',
+      el('small', {}, ['· Yönetim Paneli']),
+    ]),
+    el('div', { class: 'status-group' }, [serverPill, pill].filter(Boolean) as Node[]),
+  ]);
+}
+
+function renderMain(): HTMLElement {
+  return el('main', { class: 'grid' }, [
+    el('div', { class: 'col left' }, [renderConnectCard(), renderStatsCard(), renderActionsCard()]),
+    el('div', { class: 'col center' }, [renderChatCard()]),
+    el('div', { class: 'col right' }, [renderTasksCard(), renderPlayersCard()]),
+  ]);
+}
+
+function renderConnectCard(): HTMLElement {
+  const c = state.conn;
+  const disabled = state.status.connected || state.status.connecting;
+
+  const input = (field: keyof ConnectForm, attrs: any = {}) => el('input', {
+    type: attrs.type || 'text',
+    value: (c as any)[field] ?? '',
+    placeholder: attrs.placeholder || '',
+    autocomplete: 'off',
+    oninput: (e: any) => {
+      const v = attrs.type === 'number' ? Number(e.target.value) : e.target.value;
+      (c as any)[field] = v;
+      saveConnForm();
+    },
+  });
+
+  const check = (field: keyof ConnectForm, label: string) =>
+    el('label', { class: 'check' }, [
+      el('input', {
+        type: 'checkbox',
+        checked: !!(c as any)[field],
+        onchange: (e: any) => { (c as any)[field] = e.target.checked; saveConnForm(); },
+      }),
+      label,
+    ]);
+
+  return el('section', { class: 'card' }, [
+    el('h2', {}, ['Bağlantı', el('span', { class: 'sub' }, [state.status.connected ? 'bağlı' : 'ayarla'])]),
+    el('div', { class: 'field' }, [el('label', {}, ['Sunucu IP (host veya host:port)']), input('host', { placeholder: 'play.ornek.com' })]),
+    el('div', { class: 'field row2' }, [
+      el('div', {}, [el('label', {}, ['Kullanıcı adı']), input('username', { placeholder: 'MaviBot' })]),
+      el('div', {}, [el('label', {}, ['Port']), input('port', { type: 'number', placeholder: '25565' })]),
+    ]),
+    el('div', { class: 'field row2' }, [
+      el('div', {}, [el('label', {}, ['Sürüm (boş = auto)']), input('version', { placeholder: '1.20.1' })]),
+      el('div', {}, [
+        el('label', {}, ['Mod']),
+        el('select', {
+          onchange: (e: any) => { c.auth = e.target.value; saveConnForm(); },
+        }, [
+          el('option', { value: 'offline', selected: c.auth === 'offline' }, ['Cracked']),
+          el('option', { value: 'microsoft', selected: c.auth === 'microsoft' }, ['Premium']),
+        ]),
+      ]),
+    ]),
+    el('div', { class: 'field' }, [
+      el('label', {}, ['Şifre (register/login için)']),
+      input('authPassword', { type: 'password', placeholder: 'authme / login şifresi' }),
+    ]),
+    el('div', { class: 'field' }, [
+      check('autoAuth', 'Otomatik /register ve /login'),
+      check('autoRespawn', 'Ölünce otomatik respawn'),
+      check('autoReconnect', 'Kopunca otomatik yeniden bağlan'),
+      check('antiAfk', 'Anti-AFK (20 sn bir hareket)'),
+    ]),
+    el('div', { class: 'btn-row' }, [
+      disabled
+        ? el('button', { class: 'danger', onclick: disconnect }, ['Bağlantıyı Kes'])
+        : el('button', { class: 'primary', onclick: connect }, ['Sunucuya Bağlan']),
+    ]),
+  ]);
+}
+
+function renderStatsCard(): HTMLElement {
+  const s = state.status;
+  const pos = s.position ? `${s.position.x}, ${s.position.y}, ${s.position.z}` : '—';
+  const dim = (s.dimension || '').replace('minecraft:', '') || '—';
+  const uptime = s.joinedAt && s.connected ? fmtUptime(Date.now() - s.joinedAt) : '—';
+  return el('section', { class: 'card' }, [
+    el('h2', {}, ['Durum']),
+    el('div', { class: 'stats' }, [
+      stat('Can', s.health !== undefined ? `${Math.round(s.health * 10) / 10} / 20` : '—'),
+      stat('Açlık', s.food !== undefined ? `${s.food} / 20` : '—'),
+      stat('Dünya', dim),
+      stat('Sürüm', s.version || '—'),
+      stat('Konum', pos),
+      stat('Süre', uptime),
+    ]),
+  ]);
+}
+
+function stat(label: string, value: string): HTMLElement {
+  return el('div', { class: 'stat' }, [
+    el('div', { class: 'lbl' }, [label]),
+    el('div', { class: 'val' }, [value]),
+  ]);
+}
+
+function renderActionsCard(): HTMLElement {
+  const btn = (txt: string, action: string, params: any = {}) =>
+    el('button', { class: 'small', onclick: () => sendAction(action, params) }, [txt]);
+  return el('section', { class: 'card' }, [
+    el('h2', {}, ['Hızlı Aksiyonlar']),
+    el('div', { class: 'actions-grid' }, [
+      btn('Zıpla', 'jump'),
+      btn('Respawn', 'respawn'),
+      btn('Eşyaları At', 'dropAll'),
+      btn('İleri Başla', 'forward', { on: true }),
+      btn('İleri Dur', 'forward', { on: false }),
+      btn('Sprint', 'sprint', { on: true }),
+      btn('Sneak', 'sneak', { on: true }),
+      btn('Sneak Dur', 'sneak', { on: false }),
+      btn('Her Şeyi Dur', 'stopAll'),
+    ]),
+  ]);
+}
+
+function renderChatCard(): HTMLElement {
+  const body = el('div', { class: 'chat-body', id: 'chat-body' }, state.chat.map(renderChatLine));
+  const input = el<HTMLInputElement>('input', {
+    type: 'text',
+    placeholder: state.status.connected ? 'Mesaj veya /komut...' : 'Önce bağlan...',
+    disabled: !state.status.connected,
+    onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') { sendChat((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; } },
+  });
+
+  const send = () => {
+    sendChat(input.value);
+    input.value = '';
+    input.focus();
+  };
+
+  const card = el('section', { class: 'card chat-card' }, [
+    el('h2', {}, ['Sohbet', el('span', { class: 'sub' }, [`${state.chat.length} satır`])]),
+    body,
+    el('div', { class: 'chat-input' }, [
+      input,
+      el('button', { class: 'primary', onclick: send, disabled: !state.status.connected }, ['Gönder']),
+      el('button', { class: 'ghost', onclick: () => { state.chat = []; render(); } }, ['Temizle']),
+    ]),
+  ]);
+
+  queueMicrotask(() => { body.scrollTop = body.scrollHeight; });
+  return card;
+}
+
+function renderChatLine(m: ChatLine): HTMLElement {
+  const t = new Date(m.ts);
+  const hh = String(t.getHours()).padStart(2, '0');
+  const mm = String(t.getMinutes()).padStart(2, '0');
+  const ss = String(t.getSeconds()).padStart(2, '0');
+  const who = m.from
+    ? el('span', { class: 'who' }, [`${m.from}:`])
+    : (m.kind === 'self' ? el('span', { class: 'who' }, ['Sen:']) : null);
+  return el('div', { class: `msg kind-${m.kind}` }, [
+    el('span', { class: 'ts' }, [`${hh}:${mm}:${ss}`]),
+    who as any,
+    el('span', { class: 'text' }, [stripColorCodes(m.text)]),
+  ].filter(Boolean) as Node[]);
+}
+
+function stripColorCodes(s: string): string {
+  return String(s).replace(/§[0-9a-fk-or]/gi, '');
+}
+
+function renderTasksCard(): HTMLElement {
+  const d = state.draftTask;
+
+  const nameInput = el('input', {
+    type: 'text',
+    value: d.name,
+    placeholder: 'Görev adı',
+    oninput: (e: any) => { d.name = e.target.value; },
+  });
+  const intervalInput = el('input', {
+    type: 'number',
+    min: '1',
+    value: d.intervalSeconds,
+    oninput: (e: any) => { d.intervalSeconds = Math.max(1, Number(e.target.value) || 10); },
+  });
+  const templateArea = el('textarea', {
+    placeholder: '/msg [everyone] merhaba ::)',
+    oninput: (e: any) => { d.template = e.target.value; },
+  }, [d.template]);
+  const addBtn = el('button', {
+    class: 'primary add-btn',
+    onclick: async () => {
+      if (!d.template.trim()) { toast('Komut/mesaj boş olamaz', 'err'); return; }
+      const name = d.name.trim() || `Görev ${state.tasks.length + 1}`;
+      const payload = {
+        name,
+        template: d.template,
+        intervalSeconds: d.intervalSeconds,
+        perPlayerDelayMs: d.perPlayerDelayMs,
+        enabled: true,
+      };
+      await apiPost('/api/tasks', payload);
+      d.name = '';
+      toast('Görev eklendi', 'ok');
+    },
+  }, ['+ Görev Ekle']);
+
+  const list = el('div', { class: 'task-list' }, state.tasks.length ? state.tasks.map(renderTask) : [
+    el('div', { style: { color: 'var(--muted)', padding: '20px 4px', fontSize: '12.5px', textAlign: 'center' } }, ['Henüz görev yok. Örnek: /msg [everyone] merhaba']),
+  ]);
+
+  return el('section', { class: 'card tasks-card' }, [
+    el('h2', {}, ['Zamanlı Görevler', el('span', { class: 'sub' }, [`${state.tasks.length}`])]),
+    el('div', { class: 'task-add' }, [
+      nameInput, intervalInput,
+      templateArea,
+      addBtn,
+    ]),
+    el('div', { class: 'hint', html: 'Değişkenler: <code>[everyone]</code> tüm oyunculara tek tek · <code>[random]</code> rastgele oyuncu · <code>[count]</code> oyuncu sayısı. Her görev her X saniyede bir çalışır.' }),
+    list,
+  ]);
+}
+
+function renderTask(t: Task): HTMLElement {
+  const toggle = el('button', {
+    class: 'small',
+    onclick: () => apiPut(`/api/tasks/${t.id}`, { enabled: !t.enabled }),
+    title: t.enabled ? 'Duraklat' : 'Başlat',
+  }, [t.enabled ? '⏸' : '▶']);
+  const run = el('button', {
+    class: 'small',
+    onclick: () => apiPost(`/api/tasks/${t.id}/run`),
+    title: 'Şimdi çalıştır',
+  }, ['⚡']);
+  const del = el('button', {
+    class: 'small danger',
+    onclick: () => { if (confirm(`"${t.name}" görevini silmek istiyor musun?`)) apiDel(`/api/tasks/${t.id}`); },
+    title: 'Sil',
+  }, ['✕']);
+  const edit = el('button', {
+    class: 'small',
+    onclick: () => openEditTask(t),
+    title: 'Düzenle',
+  }, ['✎']);
+
+  const last = t.lastRun ? `son ${fmtAgo(Date.now() - t.lastRun)} önce` : 'hiç çalışmadı';
+  return el('div', { class: `task ${t.enabled ? 'enabled' : ''}` }, [
+    el('div', { class: 'top' }, [
+      el('div', { class: 'name' }, [t.name]),
+      el('div', { class: 'interval' }, [`${t.intervalSeconds}s`]),
+    ]),
+    el('div', { class: 'template' }, [t.template]),
+    el('div', { class: 'meta' }, [
+      el('span', {}, [`${t.runCount} kez · ${last}`]),
+      el('div', { class: 'actions' }, [run, toggle, edit, del]),
+    ]),
+  ]);
+}
+
+function openEditTask(t: Task) {
+  const newTmpl = prompt('Komut / mesaj şablonu:', t.template);
+  if (newTmpl === null) return;
+  const newInt = prompt('Kaç saniyede bir çalışsın?', String(t.intervalSeconds));
+  if (newInt === null) return;
+  const newName = prompt('Görev adı:', t.name);
+  if (newName === null) return;
+  apiPut(`/api/tasks/${t.id}`, {
+    template: newTmpl,
+    intervalSeconds: Number(newInt) || t.intervalSeconds,
+    name: newName,
+  });
+}
+
+function renderPlayersCard(): HTMLElement {
+  const list = state.players.length
+    ? state.players.map((p, i) => el('div', { class: 'player' }, [
+        el('span', { class: 'idx' }, [`${i + 1}.`]),
+        el('span', { class: 'nm' }, [p]),
+        el('button', { class: 'small cp', onclick: () => { navigator.clipboard?.writeText(p); toast(`"${p}" kopyalandı`, 'ok'); } }, ['kopya']),
+      ]))
+    : [el('div', { style: { color: 'var(--muted)', padding: '12px 4px', fontSize: '12.5px', textAlign: 'center' } }, ['Oyuncu listesi yükleniyor...'])];
+  return el('section', { class: 'card tasks-card', style: { minHeight: '200px' } }, [
+    el('h2', {}, ['Çevrimiçi Oyuncular', el('span', { class: 'sub' }, [`${state.players.length}`])]),
+    el('div', { class: 'players-list' }, list),
+  ]);
+}
+
+// ---- API helpers ----
+
+async function apiPost(url: string, body: any = {}) {
   try {
-    const data = await api("/api/auth/me");
-    me = data;
-    localStorage.setItem("mavi_user", JSON.stringify(me));
-    showApp();
-  } catch {
-    token = null; localStorage.removeItem("mavi_token");
-    showAuth();
-  }
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || `HTTP ${r.status}`, 'err'); return null; }
+    return await r.json();
+  } catch (e: any) { toast(e?.message || String(e), 'err'); return null; }
 }
-function showAuth() {
-  authView.classList.remove("hidden");
-  appView.classList.add("hidden");
-  topbarRight.classList.add("hidden");
-  me = null;
-}
-function showApp() {
-  authView.classList.add("hidden");
-  appView.classList.remove("hidden");
-  topbarRight.classList.remove("hidden");
-  if (me) {
-    topUser.textContent = `@${me.username}`;
-    const av = getAvatarFor(me.username);
-    if (av) {
-      myAvatarImg.src = av;
-      myAvatarImg.classList.remove("hidden");
-      myAvatar.classList.add("hidden");
-      btnAvatar.style.background = "transparent";
-      btnRemoveAvatar.classList.remove("hidden");
-    } else {
-      myAvatarImg.classList.add("hidden");
-      myAvatar.textContent = initials(me.username);
-      myAvatar.classList.remove("hidden");
-      btnAvatar.style.background = "";
-      btnRemoveAvatar.classList.add("hidden");
-    }
-    myName.textContent = me.username;
-    myCode.textContent = me.friendCode;
-    loadMyAvatar();
-  }
-  connectWS();
-  loadFriends();
-}
-
-onAuthStateChanged(fbAuth, (u) => {
-  if (u && me) {
-    getIP().then(ip => {
-      update(ref(fbDb, `users/${u.uid}`), { lastLogin: new Date().toISOString(), ip }).catch(()=>{});
-    });
-  }
-});
-
-authForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  authError.classList.add("hidden");
-  const username = inpUser.value.trim();
-  const password = inpPass.value;
-  if (!username || !password) { authError.textContent = "Kullanıcı adı ve şifre gerekli"; authError.classList.remove("hidden"); return; }
-  if (username.length < 3) { authError.textContent = "Kullanıcı adı en az 3 karakter olmalı"; authError.classList.remove("hidden"); return; }
-  const email = toEmail(username);
-  btnAuth.disabled = true;
-  btnAuth.textContent = "Bekleyin...";
+async function apiPut(url: string, body: any = {}) {
   try {
-    if (mode === "register") {
-      let data: any = null;
-      try {
-        data = await api("/api/auth/register", { method: "POST", body: JSON.stringify({ username, password }) });
-      } catch (e: any) {
-        // zaten alınmış ise şifre doğruysa girişe yönlendir
-        const m = String(e.message || "");
-        if (m.includes("alınmış") || m.includes("409") || m.includes("zaten")) {
-          try {
-            const loginData = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
-            // Firebase'de de giriş dene
-            try {
-              const cred2 = await signInWithEmailAndPassword(fbAuth, email, password);
-              const ip2 = await getIP();
-              await update(ref(fbDb, `users/${cred2.user.uid}`), { username, email, ip: ip2, lastLogin: new Date().toISOString() }).catch(async () => {
-                await set(ref(fbDb, `users/${cred2.user.uid}`), { username, email, ip: ip2, lastLogin: new Date().toISOString() });
-              });
-            } catch {}
-            token = loginData.token; me = loginData.user;
-            localStorage.setItem("mavi_token", token!);
-            localStorage.setItem("mavi_user", JSON.stringify(me));
-            toast("Bu kullanıcı adı zaten vardı, giriş yapıldı");
-            showApp();
-            return;
-          } catch {}
-        }
-        throw e;
-      }
-      token = data.token; me = data.user;
-      localStorage.setItem("mavi_token", token!);
-      localStorage.setItem("mavi_user", JSON.stringify(me));
-      try {
-        const cred = await createUserWithEmailAndPassword(fbAuth, email, password);
-        const ip = await getIP();
-        await set(ref(fbDb, `users/${cred.user.uid}`), {
-          username: me!.username, email, friendCode: me!.friendCode, ip,
-          createdAt: new Date().toISOString(), lastLogin: new Date().toISOString()
-        });
-      } catch (fbErr: any) {
-        if (fbErr.code === "auth/email-already-in-use") {
-          try {
-            const cred = await signInWithEmailAndPassword(fbAuth, email, password);
-            const ip = await getIP();
-            await update(ref(fbDb, `users/${cred.user.uid}`), { username: me!.username, email, ip, lastLogin: new Date().toISOString() }).catch(async () => {
-              await set(ref(fbDb, `users/${cred.user.uid}`), { username: me!.username, email, friendCode: me!.friendCode, ip, lastLogin: new Date().toISOString() });
-            });
-          } catch {}
-        } else if (fbErr.code) {
-          console.warn("Firebase:", fbErr);
-        }
-      }
-      toast(`Hesap oluşturuldu. Kodun: ${me!.friendCode}`);
-      showApp();
-      setTimeout(() => openAvatarPrompt(), 500);
-    } else {
-      // Giriş
-      let fbOk = true;
-      try {
-        const cred = await signInWithEmailAndPassword(fbAuth, email, password);
-        const ip = await getIP();
-        await update(ref(fbDb, `users/${cred.user.uid}`), { username, email, ip, lastLogin: new Date().toISOString() }).catch(async () => {
-          await set(ref(fbDb, `users/${cred.user.uid}`), { username, email, ip, lastLogin: new Date().toISOString() });
-        });
-      } catch (fbErr: any) {
-        // Firebase yoksa da backend ile devam et
-        if (fbErr.code !== "auth/user-not-found" && fbErr.code !== "auth/invalid-credential" && fbErr.code !== "auth/wrong-password") fbOk = false;
-        // hata yine backend'e bırak
-      }
-      const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
-      token = data.token; me = data.user;
-      localStorage.setItem("mavi_token", token!);
-      localStorage.setItem("mavi_user", JSON.stringify(me));
-      toast("Hoş geldin");
-      showApp();
-      // Firebase kaydı yoksa oluştur
-      if (!fbOk) {
-        try { const c = await createUserWithEmailAndPassword(fbAuth, email, password); const ip = await getIP(); await set(ref(fbDb, `users/${c.user.uid}`), { username: me!.username, email, friendCode: me!.friendCode, ip, lastLogin: new Date().toISOString() }); } catch {}
-      }
-    }
-  } catch (err: any) {
-    let msg = String(err.message || "Bir hata oluştu");
-    const code = String(err.code || "");
-    if (msg.includes("alınmış") || msg.includes("409") || code.includes("already-in-use")) {
-      msg = "Bu kullanıcı adı zaten alınmış. Giriş Yapmayı deneyin veya başka bir ad seçin.";
-    } else if (code === "auth/invalid-email" || msg.includes("Geçersiz")) {
-      msg = "Geçersiz kullanıcı adı. Sadece harf, rakam, _ . - kullanın.";
-    } else if (code === "auth/weak-password" || msg.includes("zayıf")) {
-      msg = "Şifre çok zayıf. En az 4 karakter girin.";
-    } else if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found") || msg.includes("hatalı") || msg.includes("bulunamadı")) {
-      msg = "Kullanıcı adı veya şifre hatalı.";
-    } else if (msg.includes("Kullanıcı adı ve şifre gerekli")) {
-      msg = "Kullanıcı adı ve şifre gerekli.";
-    }
-    authError.textContent = msg;
-    authError.classList.remove("hidden");
-  } finally {
-    btnAuth.disabled = false;
-    setAuthMode(mode);
-  }
-});
-
-btnLogout.onclick = async () => {
-  try { await signOut(fbAuth); } catch {}
-  token = null; me = null; localStorage.removeItem("mavi_token"); localStorage.removeItem("mavi_user");
-  if (ws) ws.close();
-  selected = null;
-  showAuth();
-  toast("Çıkış yapıldı");
-};
-
-btnCopyCode.onclick = async () => {
-  if (!me) return;
+    const r = await fetch(url, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || `HTTP ${r.status}`, 'err'); return null; }
+    return await r.json();
+  } catch (e: any) { toast(e?.message || String(e), 'err'); return null; }
+}
+async function apiDel(url: string) {
   try {
-    await navigator.clipboard.writeText(me.friendCode);
-    toast(`Kod kopyalandı: ${me.friendCode}`);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = me.friendCode; document.body.appendChild(ta); ta.select();
-    document.execCommand("copy"); ta.remove();
-    toast("Kod kopyalandı");
-  }
-};
-
-async function loadFriends() {
-  try {
-    const data = await api("/api/friends");
-    friends = data;
-    renderFriends();
-  } catch (e) { console.error(e); }
-}
-function renderFriends() {
-  const q = inpSearch.value.trim().toLowerCase();
-  let list = friends;
-  if (q) list = friends.filter(f => f.username.toLowerCase().includes(q) || f.friendCode.toLowerCase().includes(q));
-  friendCount.textContent = String(friends.length);
-  friendList.innerHTML = "";
-  if (list.length === 0) {
-    friendList.innerHTML = `<li style="padding:16px;text-align:center;color:var(--muted);font-size:13px">${q ? "Sonuç yok" : "Henüz arkadaşın yok. Kod ile ekle."}</li>`;
-    return;
-  }
-  for (const f of list) {
-    const li = document.createElement("li");
-    li.className = "friend-item" + (selected === f.username ? " active" : "");
-    const av = getAvatarFor(f.username);
-    const avatarHtml = av ? `<img src="${av}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:6px">` : initials(f.username);
-    li.innerHTML = `
-      <div class="avatar small">${avatarHtml}</div>
-      <div class="meta">
-        <div class="name">${f.username} <span class="${f.online ? "online" : "offline"}" title="${f.online ? "çevrimiçi" : "çevrimdışı"}"></span></div>
-        <div class="sub">${f.friendCode} - ${f.online ? "çevrimiçi" : "çevrimdışı"}</div>
-      </div>
-      <div class="peer-muted">›</div>
-    `;
-    li.onclick = () => selectFriend(f.username);
-    friendList.appendChild(li);
-  }
-  if (selected) {
-    const f = friends.find(x => x.username === selected);
-    if (f) peerStatus.textContent = f.online ? "çevrimiçi" : "çevrimdışı";
-  }
-  onlineInfo.textContent = `${friends.filter(f=>f.online).length} çevrimiçi - ${friends.length} arkadaş`;
-  // eksik avatarları Firebase'den çek ve oturt
-  for (const f of list) {
-    if (!getAvatarFor(f.username)) {
-      get(ref(fbDb, `avatars/${f.username}`)).then(snap => {
-        const v = snap.val();
-        if (v) {
-          localStorage.setItem(avatarKey(f.username), v);
-          // sadece bir kere yeniden çiz
-          const stillMissing = !document.querySelector(`.friend-item img[src="${v}"]`);
-          if (stillMissing) renderFriends();
-          if (selected === f.username) updatePeerAvatar(f.username);
-        }
-      }).catch(()=>{});
-    }
-  }
-}
-inpSearch.addEventListener("input", renderFriends);
-
-btnAddFriend.onclick = async () => {
-  const code = inpFriendCode.value.trim().toUpperCase();
-  if (!code) return toast("Kod girin");
-  if (!code.startsWith("MAVİ-") && !code.startsWith("MAVI-")) return toast("Kod biçimi: MAVİ-XXXXXX");
-  // normalize MAVI -> MAVİ desteği
-  const normalized = code.replace("MAVI-", "MAVİ-");
-  // backend MAVI- bekliyor, çevir
-  const backendCode = normalized.replace("MAVİ-", "MAVI-");
-  if (backendCode.length !== 11) return toast("Kod biçimi: MAVİ-XXXXXX");
-  btnAddFriend.disabled = true;
-  addFriendMsg.classList.add("hidden");
-  try {
-    const data = await api("/api/friends/add", { method: "POST", body: JSON.stringify({ friendCode: backendCode }) });
-    toast(`${data.friend.username} eklendi`);
-    inpFriendCode.value = "";
-    await loadFriends();
-    selectFriend(data.friend.username);
-  } catch (err: any) {
-    addFriendMsg.textContent = err.message;
-    addFriendMsg.className = "micro error";
-    addFriendMsg.classList.remove("hidden");
-  } finally { btnAddFriend.disabled = false; }
-};
-
-async function selectFriend(username: string) {
-  selected = username;
-  renderFriends();
-  chatEmpty.classList.add("hidden");
-  chatActive.classList.remove("hidden");
-  const f = friends.find(x => x.username === username);
-  updatePeerAvatar(username);
-  peerName.textContent = username;
-  peerStatus.textContent = f?.online ? "çevrimiçi" : "çevrimdışı";
-  messagesEl.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px">Yükleniyor...</div>`;
-  try {
-    const data: Message[] = await api(`/api/messages/${encodeURIComponent(username)}`);
-    messages = data;
-    renderMessages();
-  } catch (err: any) {
-    messagesEl.innerHTML = `<div style="text-align:center;color:#b91c1c;padding:20px">${err.message}</div>`;
-  }
-}
-function renderMessages() {
-  if (!selected || !me) return;
-  messagesEl.innerHTML = "";
-  if (messages.length === 0) {
-    messagesEl.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:13px;padding:30px">Henüz mesaj yok. İlk mesajı sen gönder.</div>`;
-    return;
-  }
-  for (const m of messages) {
-    const div = document.createElement("div");
-    const isMe = m.from === me.username;
-    div.className = `msg ${isMe ? "me" : "other"}`;
-    div.innerHTML = `${escapeHtml(m.text)}<span class="time">${fmtTime(m.timestamp)}</span>`;
-    messagesEl.appendChild(div);
-  }
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-function escapeHtml(s: string) {
-  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    const r = await fetch(url, { method: 'DELETE' });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || `HTTP ${r.status}`, 'err'); return null; }
+    return await r.json();
+  } catch (e: any) { toast(e?.message || String(e), 'err'); return null; }
 }
 
-msgForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = inpMsg.value.trim();
-  if (!text || !selected || !me) return;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "chat:message", to: selected, payload: { text } }));
-  } else {
-    toast("Bağlantı yok, yeniden bağlanılıyor...");
-    connectWS();
-  }
-  inpMsg.value = "";
-});
-
-function getWsUrl() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  if (location.port === "5173") return `ws://localhost:3000/ws?token=${encodeURIComponent(token || "")}`;
-  return `${proto}//${location.host}/ws?token=${encodeURIComponent(token || "")}`;
+async function connect() {
+  const c = state.conn;
+  if (!c.host.trim()) { toast('Sunucu IP boş', 'err'); return; }
+  saveConnForm();
+  await apiPost('/api/connect', c);
 }
-function connectWS() {
-  if (!token) return;
-  if (ws && ws.readyState === WebSocket.OPEN) return;
-  if (ws) try { ws.close(); } catch {}
-  const url = getWsUrl();
-  ws = new WebSocket(url);
-  onlineInfo.textContent = "Bağlanıyor...";
-  ws.onopen = () => {
-    onlineInfo.textContent = "Bağlı";
+async function disconnect() { await apiPost('/api/disconnect'); }
+async function sendChat(text: string) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  await apiPost('/api/chat', { message: t });
+}
+async function sendAction(action: string, params: any = {}) {
+  await apiPost('/api/action', { action, params });
+}
+
+// ---- WebSocket ----
+
+let ws: WebSocket | null = null;
+let wsRetry = 0;
+
+function connectWs() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${proto}://${location.host}/ws`;
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => { wsRetry = 0; };
+  ws.onmessage = (ev) => {
+    try { handleEvent(JSON.parse(ev.data)); } catch {}
   };
   ws.onclose = () => {
-    onlineInfo.textContent = "Bağlantı kesildi, 2 saniye sonra yeniden...";
-    setTimeout(() => { if (token) connectWS(); }, 2000);
+    const delay = Math.min(10000, 500 * Math.pow(2, wsRetry++));
+    setTimeout(connectWs, delay);
   };
-  ws.onerror = () => { onlineInfo.textContent = "Bağlantı hatası"; };
-  ws.onmessage = (ev) => {
-    try {
-      const data = JSON.parse(ev.data);
-      handleWsMessage(data);
-    } catch {}
-  };
+  ws.onerror = () => {};
 }
-function handleWsMessage(data: any) {
-  if (data.type === "chat:message") {
-    const msg: Message = data.payload;
-    if (selected && ( (msg.from === selected && msg.to === me!.username) || (msg.from === me!.username && msg.to === selected) )) {
-      if (!messages.some(m => m.id === msg.id)) {
-        messages.push(msg);
-        renderMessages();
-      }
-    } else if (msg.from !== me!.username) {
-      toast(`${msg.from}: ${msg.text.slice(0, 40)}`);
-      loadFriends();
-    }
-    if (msg.from === me!.username && msg.to === selected && !messages.some(m=>m.id===msg.id)) {
-      messages.push(msg);
-      renderMessages();
-    }
-  } else if (data.type === "friend:added") {
-    loadFriends();
-    toast(`${data.payload.username} seni ekledi`);
-  } else if (data.type === "presence") {
-    const { username, online } = data.payload;
-    const f = friends.find(x => x.username === username);
-    if (f) { f.online = online; renderFriends(); }
-  } else if (data.type?.startsWith("call:")) {
-    handleCallSignal(data);
+
+function handleEvent(msg: { event: string; data: any }) {
+  switch (msg.event) {
+    case 'init':
+      state.status = msg.data.status;
+      state.players = msg.data.players || [];
+      state.tasks = msg.data.tasks || [];
+      state.chat = msg.data.history || [];
+      render();
+      break;
+    case 'status':
+      state.status = msg.data;
+      render();
+      break;
+    case 'players':
+      state.players = msg.data;
+      render();
+      break;
+    case 'tasks':
+      state.tasks = msg.data;
+      render();
+      break;
+    case 'chat':
+      state.chat.push(msg.data);
+      if (state.chat.length > 500) state.chat = state.chat.slice(-500);
+      appendChatLine(msg.data);
+      break;
   }
 }
 
-const rtcConfig: RTCConfiguration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
-function handleCallSignal(data: any) {
-  const from = data.from as string;
-  if (data.type === "call:offer") {
-    pendingOffer = data;
-    const av = getAvatarFor(from);
-    if (av) { incomingAvatar.innerHTML = `<img src="${av}" alt="" style="width:100%;height:100%;object-fit:cover">`; }
-    else { incomingAvatar.textContent = initials(from); }
-    incomingName.textContent = from;
-    const isVideo = data.payload?.isVideo;
-    incomingType.textContent = isVideo ? "Görüntülü arama..." : "Sesli arama...";
-    incomingToast.classList.remove("hidden");
-    setTimeout(() => { if (!callWith) incomingToast.classList.add("hidden"); }, 30000);
-  } else if (data.type === "call:answer") {
-    if (pc && callWith === from) {
-      pc.setRemoteDescription(new RTCSessionDescription(data.payload.sdp));
-      callState.textContent = "Bağlandı";
-      startTimer();
-    }
-  } else if (data.type === "call:ice-candidate") {
-    if (pc && data.payload.candidate) {
-      pc.addIceCandidate(new RTCIceCandidate(data.payload.candidate)).catch(console.error);
-    }
-  } else if (data.type === "call:end" || data.type === "call:reject") {
-    if (callWith === from) {
-      const rejected = data.type === "call:reject";
-      toast(rejected ? "Arama reddedildi" : "Arama sonlandırıldı");
-      endCall(false);
-    } else if (pendingOffer?.from === from) {
-      incomingToast.classList.add("hidden");
-      pendingOffer = null;
-    }
-  }
+function appendChatLine(line: ChatLine) {
+  const body = document.getElementById('chat-body');
+  if (!body) { render(); return; }
+  body.append(renderChatLine(line));
+  body.scrollTop = body.scrollHeight;
 }
 
-async function startCall(to: string, isVideo: boolean) {
-  if (!to) return;
-  if (pc) { toast("Zaten bir aramadasın"); return; }
-  callWith = to;
-  callType = isVideo ? "video" : "voice";
-  showCallUI(to, isVideo, "Aranıyor...");
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-    attachLocalStream();
-    await createPeerAndOffer(to, isVideo);
-  } catch (err: any) {
-    toast("Mikrofon/kamera izni gerekli: " + (err.message || ""));
-    endCall(true);
-  }
-}
-async function acceptCall() {
-  if (!pendingOffer) return;
-  const from = pendingOffer.from;
-  const isVideo = !!pendingOffer.payload?.isVideo;
-  callWith = from;
-  callType = isVideo ? "video" : "voice";
-  incomingToast.classList.add("hidden");
-  showCallUI(from, isVideo, "Bağlanıyor...");
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-    attachLocalStream();
-    await createPeerAndAnswer(pendingOffer);
-    pendingOffer = null;
-  } catch (err: any) {
-    toast("İzin hatası: " + err.message);
-    if (ws) ws.send(JSON.stringify({ type: "call:reject", to: from }));
-    endCall(false);
-  }
-}
-function rejectCall() {
-  if (!pendingOffer) return;
-  const from = pendingOffer.from;
-  if (ws) ws.send(JSON.stringify({ type: "call:reject", to: from }));
-  incomingToast.classList.add("hidden");
-  pendingOffer = null;
-  toast("Reddedildi");
+// ---- Toasts ----
+
+const toastRoot = el('div', { class: 'toast-container' });
+function toast(text: string, kind: 'ok' | 'err' | 'info' = 'info') {
+  const node = el('div', { class: `toast ${kind === 'ok' ? 'ok' : kind === 'err' ? 'err' : ''}` }, [text]);
+  toastRoot.append(node);
+  setTimeout(() => node.remove(), 3500);
 }
 
-function showCallUI(peer: string, isVideo: boolean, state: string) {
-  callModal.classList.remove("hidden");
-  const av = getAvatarFor(peer);
-  if (av) callAvatar.innerHTML = `<img src="${av}" alt="" style="width:100%;height:100%;object-fit:cover">`;
-  else { callAvatar.textContent = initials(peer); callAvatar.innerHTML = initials(peer); }
-  callPeerName.textContent = peer;
-  callTitle.textContent = isVideo ? "Görüntülü Arama" : "Sesli Arama";
-  callState.textContent = state;
-  callTimer.textContent = "00:00";
-  callWith = peer;
-  if (isVideo) {
-    audioOnly.classList.add("hidden");
-    remoteVideo.classList.remove("hidden");
-    localVideo.classList.remove("hidden");
-    remoteVideo.style.display = "";
-    callInfo.textContent = "Kamera ve mikrofon aktif";
-  } else {
-    audioOnly.classList.remove("hidden");
-    callInfo.textContent = "Sesli arama - hoparlör açık";
-  }
-  btnMute.textContent = "Mikrofon";
-  btnCam.textContent = "Kamera";
-  btnMute.classList.remove("muted");
-  btnCam.classList.remove("muted");
-  btnCam.style.display = isVideo ? "" : "none";
-  localVideo.style.display = isVideo ? "" : "none";
+// ---- Utils ----
+
+function fmtUptime(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return h ? `${h}sa ${m}d` : m ? `${m}d ${ss}s` : `${ss}s`;
 }
-function attachLocalStream() {
-  if (localStream) {
-    localVideo.srcObject = localStream;
-  }
-}
-async function createPeerAndOffer(to: string, isVideo: boolean) {
-  pc = new RTCPeerConnection(rtcConfig);
-  setupPeerEvents(to);
-  localStream!.getTracks().forEach(t => pc!.addTrack(t, localStream!));
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  ws?.send(JSON.stringify({ type: "call:offer", to, payload: { sdp: offer, isVideo } }));
-}
-async function createPeerAndAnswer(offerMsg: any) {
-  pc = new RTCPeerConnection(rtcConfig);
-  setupPeerEvents(offerMsg.from);
-  localStream!.getTracks().forEach(t => pc!.addTrack(t, localStream!));
-  await pc.setRemoteDescription(new RTCSessionDescription(offerMsg.payload.sdp));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  ws?.send(JSON.stringify({ type: "call:answer", to: offerMsg.from, payload: { sdp: answer } }));
-  callState.textContent = "Bağlandı";
-  startTimer();
-}
-function setupPeerEvents(to: string) {
-  if (!pc) return;
-  pc.onicecandidate = (e) => {
-    if (e.candidate) ws?.send(JSON.stringify({ type: "call:ice-candidate", to, payload: { candidate: e.candidate } }));
-  };
-  pc.ontrack = (e) => {
-    const stream = e.streams[0];
-    remoteVideo.srcObject = stream;
-    remoteVideo.classList.remove("hidden");
-    if (callType === "voice") {
-      remoteVideo.style.display = "none";
-    } else {
-      audioOnly.classList.add("hidden");
-    }
-    callState.textContent = "Bağlandı";
-    if (!timerInterval) startTimer();
-  };
-  pc.onconnectionstatechange = () => {
-    const s = pc?.connectionState;
-    if (s === "connected") { callState.textContent = "Bağlandı"; startTimer(); }
-    else if (s === "failed" || s === "disconnected") { callState.textContent = "Bağlantı koptu"; }
-  };
-}
-function startTimer() {
-  if (timerInterval) return;
-  callStart = Date.now();
-  timerInterval = window.setInterval(() => {
-    const sec = Math.floor((Date.now() - callStart) / 1000);
-    const m = String(Math.floor(sec / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    callTimer.textContent = `${m}:${s}`;
-  }, 1000);
-}
-function endCall(notifyPeer: boolean) {
-  if (notifyPeer && callWith && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "call:end", to: callWith }));
-  }
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-  if (pc) { try { pc.close(); } catch {} pc = null; }
-  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  remoteVideo.srcObject = null;
-  localVideo.srcObject = null;
-  callModal.classList.add("hidden");
-  callWith = null; callType = null;
-  callState.textContent = "Bağlanıyor...";
+function fmtAgo(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}d`;
+  const h = Math.floor(m / 60);
+  return `${h}sa`;
 }
 
-btnVoiceCall.onclick = () => { if (selected) startCall(selected, false); };
-btnVideoCall.onclick = () => { if (selected) startCall(selected, true); };
-btnAcceptCall.onclick = acceptCall;
-btnRejectCall.onclick = rejectCall;
-btnEndCall.onclick = () => endCall(true);
-btnMute.onclick = () => {
-  if (!localStream) return;
-  const track = localStream.getAudioTracks()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  btnMute.classList.toggle("muted", !track.enabled);
-  btnMute.textContent = track.enabled ? "Mikrofon" : "Sessiz";
-  callInfo.textContent = track.enabled ? "Mikrofon açık" : "Mikrofon kapalı";
-};
-btnCam.onclick = () => {
-  if (!localStream) return;
-  const track = localStream.getVideoTracks()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  btnCam.classList.toggle("muted", !track.enabled);
-  btnCam.textContent = track.enabled ? "Kamera" : "Kapalı";
-};
-btnSpeaker.onclick = () => {
-  toast("Hoparlör modu: tarayıcı varsayılanını kullanıyor");
-};
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !callModal.classList.contains("hidden")) endCall(true);
-});
+// ---- Boot ----
 
-setAuthMode("login");
-checkAuth();
+render();
+connectWs();
+setInterval(() => {
+  if (state.status.connected) {
+    const topbar = document.querySelector('header.topbar');
+    const parent = topbar?.parentElement;
+    if (topbar && parent) parent.replaceChild(renderTopbar(), topbar);
+    const statsCard = document.querySelectorAll('.col.left .card')[1];
+    if (statsCard) statsCard.replaceWith(renderStatsCard());
+  }
+}, 1000);
