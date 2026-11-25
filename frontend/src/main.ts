@@ -48,9 +48,12 @@ interface ConnectForm {
   autoReconnect: boolean;
   antiAfk: boolean;
   antiBot: boolean;
+  joinCommands: string;
 }
 
 const LS_KEY = 'mavi-mc-bot:conn';
+const LS_PRESETS = 'mavi-mc-bot:presets';
+const LS_HISTORY = 'mavi-mc-bot:history';
 
 const state = {
   status: { connected: false, connecting: false } as BotStatus,
@@ -59,6 +62,10 @@ const state = {
   chat: [] as ChatLine[],
   conn: loadConnForm(),
   draftTask: { name: '', template: '/msg [everyone] merhaba :)', intervalSeconds: 10, perPlayerDelayMs: 400 },
+  presets: loadPresets() as string[],
+  history: loadHistory() as string[],
+  histIndex: -1,
+  lastConnKey: '',
 };
 
 function loadConnForm(): ConnectForm {
@@ -74,6 +81,7 @@ function loadConnForm(): ConnectForm {
     autoReconnect: true,
     antiAfk: false,
     antiBot: true,
+    joinCommands: '',
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -86,7 +94,27 @@ function saveConnForm() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state.conn)); } catch {}
 }
 
+function loadPresets(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_PRESETS);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return ['Merhaba!', '/spawn', '/list', '.au'];
+}
+function savePresets() { try { localStorage.setItem(LS_PRESETS, JSON.stringify(state.presets)); } catch {} }
+
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_HISTORY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+function saveHistory() { try { localStorage.setItem(LS_HISTORY, JSON.stringify(state.history.slice(-50))); } catch {} }
+
 const app = document.getElementById('app')!;
+let chatInputEl: HTMLInputElement | null = null;
+let chatSendEl: HTMLButtonElement | null = null;
 
 function el<T extends HTMLElement = HTMLElement>(tag: string, attrs: Record<string, any> = {}, children: (Node | string)[] = []): T {
   const node = document.createElement(tag) as any;
@@ -107,8 +135,49 @@ function el<T extends HTMLElement = HTMLElement>(tag: string, attrs: Record<stri
 
 function render() {
   app.innerHTML = '';
-  app.append(el('div', { class: 'app' }, [renderTopbar(), renderMain()]));
+  app.append(el('div', { class: 'app' }, [
+    wrap('topbar-slot', renderTopbar()),
+    renderMain(),
+  ]));
   if (!toastRoot.parentNode) document.body.append(toastRoot);
+  state.lastConnKey = connKey();
+  updateChatInputState();
+}
+
+function wrap(id: string, child: Node | null): HTMLElement {
+  return el('div', { id, style: { display: 'contents' } }, child ? [child] : []);
+}
+
+function connKey(): string {
+  return `${state.status.connected ? 1 : 0}|${state.status.connecting ? 1 : 0}`;
+}
+
+// Bir bölümü yerinde değiştir (varsa) — tüm paneli yeniden çizmeden
+function replaceById(id: string, node: HTMLElement) {
+  const old = document.getElementById(id);
+  if (old) old.replaceWith(node);
+}
+
+function refreshTopbar() { replaceById('topbar-slot', wrap('topbar-slot', renderTopbar())); }
+function refreshStats() { const n = renderStatsCard(); replaceById('stats-card', n); }
+function refreshBanner() { replaceById('banner-slot', wrap('banner-slot', renderBanner())); }
+function refreshConnect() { replaceById('card-connect', renderConnectCard()); }
+function refreshTasks() { replaceById('card-tasks', renderTasksCard()); }
+function refreshPlayers() { replaceById('card-players', renderPlayersCard()); }
+function refreshPresets() { replaceById('card-presets', renderPresetsCard()); }
+function refreshChatCount() {
+  const c = document.getElementById('chat-count');
+  if (c) c.textContent = `${state.chat.length} satır`;
+}
+
+// Sohbet kutusunu YENİDEN ÇİZMEDEN sadece durumunu güncelle (yazarken silinmesin)
+function updateChatInputState() {
+  const connected = state.status.connected;
+  if (chatInputEl) {
+    chatInputEl.disabled = !connected;
+    chatInputEl.placeholder = connected ? 'Mesaj veya /komut yaz, Enter ile gönder...' : 'Önce bir sunucuya bağlan...';
+  }
+  if (chatSendEl) chatSendEl.disabled = !connected;
 }
 
 function renderTopbar(): HTMLElement {
@@ -138,7 +207,7 @@ function renderTopbar(): HTMLElement {
 function renderMain(): HTMLElement {
   return el('main', { class: 'grid' }, [
     el('div', { class: 'col left' }, [renderConnectCard(), renderStatsCard(), renderActionsCard()]),
-    el('div', { class: 'col center' }, [renderBanner(), renderChatCard()].filter(Boolean) as Node[]),
+    el('div', { class: 'col center' }, [wrap('banner-slot', renderBanner()), renderChatCard(), renderPresetsCard()]),
     el('div', { class: 'col right' }, [renderTasksCard(), renderPlayersCard()]),
   ]);
 }
@@ -181,7 +250,13 @@ function renderConnectCard(): HTMLElement {
       label,
     ]);
 
-  return el('section', { class: 'card' }, [
+  const joinCmds = el<HTMLTextAreaElement>('textarea', {
+    placeholder: '/server survival\n/kit başlangıç',
+    style: { minHeight: '46px', fontFamily: 'var(--mono)', fontSize: '12px' },
+    oninput: (e: any) => { c.joinCommands = e.target.value; saveConnForm(); },
+  }, [c.joinCommands || '']);
+
+  return el('section', { class: 'card', id: 'card-connect' }, [
     el('h2', {}, ['Bağlantı', el('span', { class: 'sub' }, [state.status.connected ? 'bağlı' : 'ayarla'])]),
     el('div', { class: 'field' }, [el('label', {}, ['Sunucu IP (host veya host:port)']), input('host', { placeholder: 'play.ornek.com' })]),
     el('div', { class: 'field row2' }, [
@@ -210,6 +285,10 @@ function renderConnectCard(): HTMLElement {
       check('autoRespawn', 'Ölünce otomatik respawn'),
       check('autoReconnect', 'Kopunca otomatik yeniden bağlan'),
       check('antiAfk', 'Anti-AFK (20 sn bir hareket)'),
+    ]),
+    el('div', { class: 'field' }, [
+      el('label', {}, ['Katılınca çalışacak komutlar (her satır bir komut)']),
+      joinCmds,
     ]),
     el('div', { class: 'btn-row' }, [
       disabled
@@ -265,31 +344,102 @@ function renderActionsCard(): HTMLElement {
 
 function renderChatCard(): HTMLElement {
   const body = el('div', { class: 'chat-body', id: 'chat-body' }, state.chat.map(renderChatLine));
+  const connected = state.status.connected;
+
   const input = el<HTMLInputElement>('input', {
     type: 'text',
-    placeholder: state.status.connected ? 'Mesaj veya /komut...' : 'Önce bağlan...',
-    disabled: !state.status.connected,
-    onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') { sendChat((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; } },
+    placeholder: connected ? 'Mesaj veya /komut yaz, Enter ile gönder...' : 'Önce bir sunucuya bağlan...',
+    disabled: !connected,
+    autocomplete: 'off',
+    onkeydown: (e: KeyboardEvent) => {
+      const t = e.target as HTMLInputElement;
+      if (e.key === 'Enter') {
+        submitChat(t.value);
+        t.value = '';
+        state.histIndex = -1;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!state.history.length) return;
+        if (state.histIndex < 0) state.histIndex = state.history.length;
+        state.histIndex = Math.max(0, state.histIndex - 1);
+        t.value = state.history[state.histIndex] || '';
+        queueMicrotask(() => t.setSelectionRange(t.value.length, t.value.length));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (state.histIndex < 0) return;
+        state.histIndex++;
+        if (state.histIndex >= state.history.length) { state.histIndex = -1; t.value = ''; }
+        else t.value = state.history[state.histIndex];
+      }
+    },
   });
+  chatInputEl = input;
 
-  const send = () => {
-    sendChat(input.value);
-    input.value = '';
-    input.focus();
-  };
+  const send = () => { submitChat(input.value); input.value = ''; state.histIndex = -1; input.focus(); };
+  const sendBtn = el<HTMLButtonElement>('button', { class: 'primary', onclick: send, disabled: !connected }, ['Gönder']);
+  chatSendEl = sendBtn;
 
-  const card = el('section', { class: 'card chat-card' }, [
-    el('h2', {}, ['Sohbet', el('span', { class: 'sub' }, [`${state.chat.length} satır`])]),
+  const card = el('section', { class: 'card chat-card', id: 'card-chat' }, [
+    el('h2', {}, ['Sohbet', el('span', { class: 'sub', id: 'chat-count' }, [`${state.chat.length} satır`])]),
     body,
     el('div', { class: 'chat-input' }, [
       input,
-      el('button', { class: 'primary', onclick: send, disabled: !state.status.connected }, ['Gönder']),
-      el('button', { class: 'ghost', onclick: () => { state.chat = []; render(); } }, ['Temizle']),
+      sendBtn,
+      el('button', { class: 'ghost', onclick: () => { state.chat = []; const b = document.getElementById('chat-body'); if (b) b.innerHTML = ''; refreshChatCount(); } }, ['Temizle']),
     ]),
   ]);
 
   queueMicrotask(() => { body.scrollTop = body.scrollHeight; });
   return card;
+}
+
+// Sohbete gönder + geçmişe ekle
+function submitChat(text: string) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  if (state.history[state.history.length - 1] !== t) {
+    state.history.push(t);
+    if (state.history.length > 50) state.history = state.history.slice(-50);
+    saveHistory();
+  }
+  sendChat(t);
+}
+
+function renderPresetsCard(): HTMLElement {
+  const connected = state.status.connected;
+  const chips = state.presets.map((msg, i) =>
+    el('div', { class: 'preset' }, [
+      el('button', {
+        class: 'preset-send',
+        disabled: !connected,
+        title: 'Gönder',
+        onclick: () => sendChat(msg),
+      }, [msg]),
+      el('button', { class: 'preset-del', title: 'Sil', onclick: () => { state.presets.splice(i, 1); savePresets(); refreshPresets(); } }, ['✕']),
+    ]));
+
+  const addInput = el<HTMLInputElement>('input', {
+    type: 'text',
+    placeholder: 'Yeni hazır mesaj/komut...',
+    onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') addPreset((e.target as HTMLInputElement)); },
+  });
+  const addPreset = (inp: HTMLInputElement) => {
+    const v = inp.value.trim();
+    if (!v) return;
+    state.presets.push(v);
+    savePresets();
+    inp.value = '';
+    refreshPresets();
+  };
+
+  return el('section', { class: 'card presets-card', id: 'card-presets' }, [
+    el('h2', {}, ['Hazır Mesajlar', el('span', { class: 'sub' }, ['tıkla = gönder'])]),
+    el('div', { class: 'preset-list' }, chips.length ? chips : [el('div', { style: { color: 'var(--muted)', fontSize: '12px', padding: '4px' } }, ['Henüz yok. Aşağıdan ekle.'])]),
+    el('div', { class: 'preset-add' }, [
+      addInput,
+      el('button', { class: 'small primary', onclick: () => addPreset(addInput) }, ['+ Ekle']),
+    ]),
+  ]);
 }
 
 function renderChatLine(m: ChatLine): HTMLElement {
@@ -352,7 +502,7 @@ function renderTasksCard(): HTMLElement {
     el('div', { style: { color: 'var(--muted)', padding: '20px 4px', fontSize: '12.5px', textAlign: 'center' } }, ['Henüz görev yok. Örnek: /msg [everyone] merhaba']),
   ]);
 
-  return el('section', { class: 'card tasks-card' }, [
+  return el('section', { class: 'card tasks-card', id: 'card-tasks' }, [
     el('h2', {}, ['Zamanlı Görevler', el('span', { class: 'sub' }, [`${state.tasks.length}`])]),
     el('div', { class: 'task-add' }, [
       el('div', { class: 'ta-field' }, [el('label', {}, ['Görev adı']), nameInput]),
@@ -417,16 +567,22 @@ function openEditTask(t: Task) {
 
 function renderPlayersCard(): HTMLElement {
   const list = state.players.length
-    ? state.players.map((p, i) => el('div', { class: 'player' }, [
+    ? state.players.map((p, i) => el('div', { class: 'player', title: 'Tıkla: bu oyuncuya özel mesaj yaz' , onclick: () => whisperTo(p) }, [
         el('span', { class: 'idx' }, [`${i + 1}.`]),
         el('span', { class: 'nm' }, [p]),
-        el('button', { class: 'small cp', onclick: () => { navigator.clipboard?.writeText(p); toast(`"${p}" kopyalandı`, 'ok'); } }, ['kopya']),
+        el('button', { class: 'small cp', onclick: (e: any) => { e.stopPropagation(); navigator.clipboard?.writeText(p); toast(`"${p}" kopyalandı`, 'ok'); } }, ['kopya']),
       ]))
-    : [el('div', { style: { color: 'var(--muted)', padding: '12px 4px', fontSize: '12.5px', textAlign: 'center' } }, ['Oyuncu listesi yükleniyor...'])];
-  return el('section', { class: 'card players-card' }, [
+    : [el('div', { style: { color: 'var(--muted)', padding: '12px 4px', fontSize: '12.5px', textAlign: 'center' } }, [state.status.connected ? 'Oyuncu yok.' : 'Önce bağlan.'])];
+  return el('section', { class: 'card players-card', id: 'card-players' }, [
     el('h2', {}, ['Çevrimiçi Oyuncular', el('span', { class: 'sub' }, [`${state.players.length}`])]),
     el('div', { class: 'players-list' }, list),
   ]);
+}
+
+function whisperTo(player: string) {
+  if (!chatInputEl) return;
+  chatInputEl.value = `/msg ${player} `;
+  chatInputEl.focus();
 }
 
 // ---- API helpers ----
@@ -498,22 +654,36 @@ function handleEvent(msg: { event: string; data: any }) {
       state.chat = msg.data.history || [];
       render();
       break;
-    case 'status':
+    case 'status': {
       state.status = msg.data;
-      render();
+      // Sohbet kutusunu ASLA yeniden çizme — sadece gereken bölümleri güncelle
+      refreshTopbar();
+      refreshStats();
+      refreshBanner();
+      updateChatInputState();
+      // Bağlan/Kes durumu değiştiyse bağlantı kartını ve presetleri tazele
+      const key = connKey();
+      if (key !== state.lastConnKey) {
+        state.lastConnKey = key;
+        refreshConnect();
+        refreshPresets();
+        refreshPlayers();
+      }
       break;
+    }
     case 'players':
       state.players = msg.data;
-      render();
+      refreshPlayers();
       break;
     case 'tasks':
       state.tasks = msg.data;
-      render();
+      refreshTasks();
       break;
     case 'chat':
       state.chat.push(msg.data);
       if (state.chat.length > 500) state.chat = state.chat.slice(-500);
       appendChatLine(msg.data);
+      refreshChatCount();
       break;
   }
 }
@@ -556,12 +726,10 @@ function fmtAgo(ms: number): string {
 
 render();
 connectWs();
+// Her saniye sadece üst bar (süre) ve durum kartını tazele — sohbet kutusuna dokunma
 setInterval(() => {
   if (state.status.connected) {
-    const topbar = document.querySelector('header.topbar');
-    const parent = topbar?.parentElement;
-    if (topbar && parent) parent.replaceChild(renderTopbar(), topbar);
-    const statsCard = document.getElementById('stats-card');
-    if (statsCard) statsCard.replaceWith(renderStatsCard());
+    refreshTopbar();
+    refreshStats();
   }
 }, 1000);

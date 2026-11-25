@@ -342,7 +342,25 @@ main.grid {
   font-size: 11px;
 }
 
+/* Hazır mesajlar */
+.presets-card { flex: 0 0 auto; }
+.preset-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.preset { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: rgba(7, 16, 40, 0.6); }
+.preset-send {
+  border: none; border-radius: 0; background: transparent;
+  padding: 5px 9px; font-size: 12.5px; max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono);
+}
+.preset-send:hover:not(:disabled) { background: rgba(47, 125, 255, 0.18); }
+.preset-del {
+  border: none; border-left: 1px solid var(--line); border-radius: 0;
+  background: transparent; color: var(--muted); padding: 4px 7px; font-size: 11px;
+}
+.preset-del:hover { background: rgba(255, 84, 104, 0.2); color: var(--bad); }
+.preset-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+
 /* Players */
+.player { cursor: pointer; }
 .players-list {
   overflow-y: auto;
   flex: 1 1 auto;

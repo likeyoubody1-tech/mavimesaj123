@@ -13,6 +13,7 @@ export interface BotConfig {
   autoReconnect: boolean;
   antiAfk: boolean;
   antiBot: boolean;
+  joinCommands: string;
 }
 
 export interface BotStatus {
@@ -346,6 +347,21 @@ export class MCBot extends EventEmitter {
     }
   }
 
+  /** Katılınca çalışacak komutları sırayla gönderir (her satır bir komut) */
+  private runJoinCommands() {
+    const raw = this.cfg?.joinCommands || '';
+    const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) return;
+    // Auth gecikmesinden sonra başla ki register/login önce otursun
+    lines.forEach((cmd, i) => {
+      setTimeout(() => {
+        if (this.bot && this.status.connected) {
+          try { this.bot.chat(cmd); this.pushChat({ kind: 'self', from: this.status.username, text: cmd }); } catch {}
+        }
+      }, 3500 + i * 1500);
+    });
+  }
+
   /** Anti-bot hareket kontrollerini geçmek için spawn sonrası insansı davranış */
   private humanizeJoin() {
     const bot = this.bot;
@@ -445,6 +461,7 @@ export class MCBot extends EventEmitter {
   private _lastAnswer = '';
   private _lastAnswerAt = 0;
   private _reconnectAttempts = 0;
+  private _lastPosEmit = 0;
 
   private bindEvents() {
     const bot = this.bot;
@@ -477,6 +494,7 @@ export class MCBot extends EventEmitter {
         this.humanizeJoin();
       }
       if (this.cfg?.antiAfk) this.startAntiAfk();
+      this.runJoinCommands();
     });
 
     bot.on('health', () => {
@@ -489,6 +507,11 @@ export class MCBot extends EventEmitter {
 
     bot.on('move', () => {
       if (!bot.entity) return;
+      // Konumu en fazla saniyede bir yayınla — aksi halde her fizik tikinde
+      // tüm panel yenilenir ve kullanıcı sohbete yazamaz.
+      const now = Date.now();
+      if (now - this._lastPosEmit < 1000) return;
+      this._lastPosEmit = now;
       const p = bot.entity.position;
       this.setStatus({
         position: { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, z: Math.round(p.z * 10) / 10 },

@@ -64,6 +64,7 @@ app.post('/api/connect', (req, res) => {
         autoReconnect: !!body.autoReconnect,
         antiAfk: !!body.antiAfk,
         antiBot: !!body.antiBot,
+        joinCommands: String(body.joinCommands || '').slice(0, 2000),
     };
     bot.connect(cfg);
     res.json({ ok: true });

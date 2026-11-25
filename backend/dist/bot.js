@@ -356,6 +356,25 @@ export class MCBot extends EventEmitter {
             this.pushChat({ kind: 'error', text: `GUI captcha tıklama hatası: ${e?.message || e}` });
         }
     }
+    /** Katılınca çalışacak komutları sırayla gönderir (her satır bir komut) */
+    runJoinCommands() {
+        const raw = this.cfg?.joinCommands || '';
+        const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+        if (!lines.length)
+            return;
+        // Auth gecikmesinden sonra başla ki register/login önce otursun
+        lines.forEach((cmd, i) => {
+            setTimeout(() => {
+                if (this.bot && this.status.connected) {
+                    try {
+                        this.bot.chat(cmd);
+                        this.pushChat({ kind: 'self', from: this.status.username, text: cmd });
+                    }
+                    catch { }
+                }
+            }, 3500 + i * 1500);
+        });
+    }
     /** Anti-bot hareket kontrollerini geçmek için spawn sonrası insansı davranış */
     humanizeJoin() {
         const bot = this.bot;
@@ -488,6 +507,7 @@ export class MCBot extends EventEmitter {
     _lastAnswer = '';
     _lastAnswerAt = 0;
     _reconnectAttempts = 0;
+    _lastPosEmit = 0;
     bindEvents() {
         const bot = this.bot;
         if (!bot)
@@ -519,6 +539,7 @@ export class MCBot extends EventEmitter {
             }
             if (this.cfg?.antiAfk)
                 this.startAntiAfk();
+            this.runJoinCommands();
         });
         bot.on('health', () => {
             this.setStatus({ health: bot.health, food: bot.food });
@@ -529,6 +550,12 @@ export class MCBot extends EventEmitter {
         bot.on('move', () => {
             if (!bot.entity)
                 return;
+            // Konumu en fazla saniyede bir yayınla — aksi halde her fizik tikinde
+            // tüm panel yenilenir ve kullanıcı sohbete yazamaz.
+            const now = Date.now();
+            if (now - this._lastPosEmit < 1000)
+                return;
+            this._lastPosEmit = now;
             const p = bot.entity.position;
             this.setStatus({
                 position: { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, z: Math.round(p.z * 10) / 10 },
